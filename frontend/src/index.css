@@ -1,0 +1,173 @@
+@import "tailwindcss";
+
+html, body {
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  transition: background-color 0.2s ease, color 0.2s ease;
+  margin: 0;
+  padding: 0;
+}
+
+#root {
+  background-color: var(--bg-page);
+  min-height: 100vh;
+}
+
+@theme {
+  --color-surface: var(--bg-surface);
+  --color-selection-bg: var(--bg-selection);
+  --color-selection-border: var(--border-selection);
+
+  --color-header: var(--bg-header);
+  --color-search-bg: var(--bg-search);
+  --color-search-bg-focus: var(--bg-search-focus);
+  --color-avatar-bg: var(--bg-avatar);
+  --color-avatar-text: var(--text-avatar);
+  --color-avatar-border: var(--border-avatar);
+
+  --color-sidebar: var(--bg-sidebar);
+  --color-sidebar-border: var(--border-sidebar);
+  --color-sidebar-active: var(--bg-sidebar-active);
+  --color-sidebar-hover: var(--bg-sidebar-hover);
+  --color-quota-bg: var(--bg-quota);
+
+  --color-page: var(--bg-page);
+  --color-primary: var(--text-primary);
+  --color-secondary: var(--text-secondary);
+  --color-subtle: var(--text-subtle);
+  --color-placeholder: var(--text-placeholder);
+  --color-border: var(--border-default);
+  --color-border-focus: var(--border-focus);
+  --color-btn: var(--bg-button);
+  --color-btn-text: var(--text-button);
+  --color-btn-hover: var(--bg-button-hover);
+  --color-error-bg: var(--bg-error);
+  --color-error-border: var(--border-error);
+  --color-error-text: var(--text-error);
+  --color-error-icon: var(--icon-error);  
+
+  --color-icon-folder: var(--icon-folder);
+  --color-icon-image: var(--icon-image);
+  --color-icon-video: var(--icon-video);
+  --color-icon-audio: var(--icon-audio);
+  --color-icon-doc: var(--icon-doc);
+  --color-icon-archive: var(--icon-archive);
+  --color-icon-code: var(--icon-code);
+  --color-icon-default: var(--icon-default);
+
+  --color-modal-overlay: var(--bg-modal-overlay);
+  --color-accent-warm-bg: var(--bg-accent-warm);
+  --color-accent-warm-text: var(--text-accent-warm);
+  --color-accent-cool-bg: var(--bg-accent-cool);
+  --color-accent-cool-text: var(--text-accent-cool);
+
+  --color-success-bg: var(--bg-success);
+  --color-success-text: var(--text-success);
+}
+
+:root {
+  --bg-page: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-selection: rgba(59, 130, 246, 0.1);
+  --border-selection: #3b82f6; 
+  
+  --bg-header: #ffffff;
+  --bg-search: #f1f5f9;
+  --bg-search-focus: #ffffff;
+  --bg-avatar: #dbeafe;
+  --text-avatar: #1e3a8a;
+  --border-avatar: #bfdbfe;
+  
+  --bg-sidebar: #ffffff;      
+  --bg-sidebar-active: #f1f5f9;
+  --bg-sidebar-hover: #f8fafc;
+  --bg-quota: #e2e8f0;
+  
+  --text-primary: #0f172a;
+  --text-secondary: #64748b;
+  --text-subtle: #94a3b8;
+  --text-placeholder: #cbd5e1;
+  
+  --border-default: #e2e8f0;
+  --border-sidebar: #e2e8f0;
+  --border-focus: #3b82f6;
+  
+  --bg-button: #0f172a;
+  --text-button: #ffffff;
+  --bg-button-hover: #1e293b;
+  
+  --bg-error: rgba(254, 226, 226, 0.5);
+  --border-error: rgba(254, 202, 202, 0.8);
+  --text-error: #991b1b;
+  --icon-error: #ef4444;
+
+  --color-menu-bg: var(--bg-menu);
+  --color-menu-hover: var(--bg-menu-hover);
+  --color-menu-separator: var(--border-menu);
+  --color-menu-danger-hover: var(--bg-menu-danger-hover);
+  --color-menu-danger-text: var(--text-menu-danger);
+
+  --icon-folder: #2563eb;   /* blue-600 */
+  --icon-image: #9333ea;    /* purple-600 */
+  --icon-video: #dc2626;    /* red-600 */
+  --icon-audio: #db2777;    /* pink-600 */
+  --icon-doc: #16a34a;      /* green-600 */
+  --icon-archive: #ca8a04;  /* yellow-600 */
+  --icon-code: #0891b2;     /* cyan-600 */
+  --icon-default: #64748b;  /* slate-500 */
+}
+
+[data-theme='dark'] {
+  --bg-page: #09090b;
+  --bg-surface: #18181b;
+  --bg-selection: rgba(63, 63, 70, 0.5);
+  --border-selection: #52525b;
+  
+  --bg-header: #09090b;
+  --bg-search: #18181b;
+  --bg-search-focus: #27272a;
+  --bg-avatar: #1e3a8a;
+  --text-avatar: #dbeafe;
+  --border-avatar: #1e40af;
+  
+  --bg-sidebar: #09090b;
+  --bg-sidebar-active: #27272a;
+  --bg-sidebar-hover: #18181b;
+  --bg-quota: #27272a;  
+  
+  --text-primary: #d1d4da;
+  --text-secondary: #94a3b8;
+  --text-subtle: #64748b;
+  --text-placeholder: #475569;
+  
+  --border-default: #27272a;
+  --border-sidebar: #27272a;
+  --border-focus: #ffffff;
+  
+  --bg-button: #f8fafc;
+  --text-button: #09090b;
+  --bg-button-hover: #e2e8f0;
+  
+  --bg-error: rgba(127, 29, 29, 0.3);
+  --border-error: rgba(127, 29, 29, 0.5);
+  --text-error: #fca5a5;
+  --icon-error: #ef4444;
+
+  --icon-folder: #60a5fa;
+  --icon-image: #a78bfa;
+  --icon-video: #f87171;
+  --icon-audio: #fb7185;
+  --icon-doc: #34d399;
+  --icon-archive: #fbbf24;
+  --icon-code: #38bdf8;
+  --icon-default: #a1a1aa;
+
+  --bg-modal-overlay: rgba(0, 0, 0, 0.65);
+  --bg-accent-warm: #431407;
+  --text-accent-warm: #fb923c;
+  --bg-accent-cool: #172554;
+  --text-accent-cool: #60a5fa;
+
+  --bg-success: rgba(34, 197, 94, 0.15);
+  --text-success: #4ade80;
+}

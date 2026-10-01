@@ -1,0 +1,15 @@
+# Environment
+.env
+frontend/.env.local
+frontend/.env.production.local
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Java
+backend/target/
+
+# IDE
+.idea/
+.vscode/

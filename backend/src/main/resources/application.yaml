@@ -1,0 +1,92 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: mini-drive-backend
+  servlet:
+    multipart:
+      max-file-size: 60MB
+      max-request-size: 60MB
+  datasource:
+    url: ${DATASOURCE_URL:jdbc:postgresql://localhost:5432/mini_drive}
+    username: ${DATASOURCE_USERNAME:postgres}
+    password: ${DATASOURCE_PASSWORD:6792}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  mail:
+    host: ${MAIL_HOST:smtp.mail.ru}
+    port: ${MAIL_PORT:465}
+    username: ${MAIL_USERNAME:shurik.knv@mail.ru}
+    password: ${MAIL_PASSWORD:oOGedgleZYxlk9EdDfYR}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+          starttls:
+            enable: false
+          connectiontimeout: 3000
+          timeout: 3000
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000ms
+
+app:
+  jwt:
+    access-secret: ${JWT_ACCESS_SECRET:super_secret_access_key_must_be_at_least_32_chars_long!!!}
+    access-expiration-ms: 900000
+    refresh-expiration-ms: 2592000000
+  cors:
+    allowed-origins: '*'
+  admin:
+    bootstrap:
+      enabled: ${ADMIN_BOOTSTRAP_ENABLED:true}
+      username: ${ADMIN_USERNAME:admin}
+      email: ${ADMIN_EMAIL:admin@example.com}
+      password: ${ADMIN_PASSWORD:admin}
+  storage:
+    local:
+      base-path: ${STORAGE_LOCAL_BASE_PATH:./storage}
+  email-code:
+    expire: 10m
+    max-attempts: 5
+    cooldown: 60s
+    max-requests-per-hour: 5
+  chunk:
+    min-size: 5242880         # 5 MB
+    max-size: 52428800        # 50 MB
+    default-size: 10485760    # 10 MB
+    session-expire: 24h
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,loggers,env,mappings
+    health:
+      show-details: always
+
+springdoc:
+  api-docs:
+    path: /v1/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+  show-actuator: true
+
+logging:
+  level:
+    org.springframework.security: TRACE
+    org.springframework.web: TRACE
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE

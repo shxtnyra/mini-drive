@@ -1,78 +1,43 @@
 import { FolderPlus, FileUp, FolderUp } from 'lucide-react';
-import { useEffect, useRef } from 'react';
-import { useCreateActions } from '../hooks/useCreateActions.ts';
+import { useCreateActions } from '../hooks/useCreateActions';
+import Menu from './ui/menu/Menu';
+import MenuItem from './ui/menu/MenuItem';
+import MenuGroup from './ui/menu/MenuGroup';
 
-interface CreateContextMenuProps {
+interface CreateMenuProps {
   x: number;
   y: number;
   onClose: () => void;
 }
 
-export default function CreateMenu({ x, y, onClose }: CreateContextMenuProps) {
-  const menuRef = useRef<HTMLDivElement>(null);
+export default function CreateMenu({ x, y, onClose }: CreateMenuProps) {
   const { openFilePicker, openFolderPicker, openCreateFolderModal } = useCreateActions();
 
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [onClose]);
-
   return (
-    <div
-      ref={menuRef}
-      style={{ top: y, left: x }}
-      className="fixed z-50 w-80 bg-page rounded-lg shadow-xl border border-border py-1.5 text-sm font-medium text-primary select-none animate-in fade-in zoom-in-95 duration-100"
-    >
-      <div className="border-b border-border pb-1 mb-1">
-        <button
-          onClick={() => {
-            openCreateFolderModal();
-            onClose();
-          }}
-          className="w-full px-4 py-2 flex items-center justify-between hover:bg-sidebar-hover transition-colors cursor-pointer"
-        >
-          <div className="flex items-center gap-3.5">
-            <FolderPlus size={19} className="text-secondary" />
-            <span>Новая папка</span>
-          </div>
-          <span className="text-xs text-subtle font-normal">Alt+C, затем F</span>
-        </button>
-      </div>
+    <Menu x={x} y={y} onClose={onClose}>
+      <MenuGroup>
+        <MenuItem
+          icon={<FolderPlus size={19} />}
+          label="Новая папка"
+          shortcut="Alt+C, затем F"
+          onClick={() => { openCreateFolderModal(); onClose(); }}
+        />
+      </MenuGroup>
 
-      <div className="space-y-0.5">
-        <button
-          onClick={() => {
-            openFilePicker();
-            onClose();
-          }}
-          className="w-full px-4 py-2 flex items-center justify-between hover:bg-sidebar-hover transition-colors cursor-pointer"
-        >
-          <div className="flex items-center gap-3.5">
-            <FileUp size={19} className="text-secondary" />
-            <span>Загрузить файл</span>
-          </div>
-          <span className="text-xs text-subtle font-normal">Alt+C, затем U</span>
-        </button>
-
-        <button
-          onClick={() => {
-            openFolderPicker();
-            onClose();
-          }}
-          className="w-full px-4 py-2 flex items-center justify-between hover:bg-sidebar-hover transition-colors cursor-pointer"
-        >
-          <div className="flex items-center gap-3.5">
-            <FolderUp size={19} className="text-secondary" />
-            <span>Загрузить папку</span>
-          </div>
-          <span className="text-xs text-subtle font-normal">Alt+C, затем I</span>
-        </button>
-      </div>
-    </div>
+      <MenuGroup showBorder={false}>
+        <MenuItem
+          icon={<FileUp size={19} />}
+          label="Загрузить файл"
+          shortcut="Alt+C, затем U"
+          onClick={() => { openFilePicker(); onClose(); }}
+        />
+        <MenuItem
+          icon={<FolderUp size={19} />}
+          label="Загрузить папку"
+          shortcut="Alt+C, затем I"
+          onClick={() => { openFolderPicker(); onClose(); }}
+        />
+      </MenuGroup>
+    </Menu>
   );
-} 
+}

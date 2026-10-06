@@ -83,6 +83,24 @@ export function useFileActions() {
     [removeFiles, clearSelection]
   );
 
+  const addToFavorites = async (uuids: string[]) => {
+    try {
+      await fileService.addToFavorites(uuids);
+      useFileStore.getState().updateFilesFavoriteStatus(uuids, true);
+    } catch (err) {
+      console.error('Ошибка при добавлении в избранное:', err);
+    }
+  };
+
+  const removeFromFavorites = async (uuids: string[]) => {
+    try {
+      await fileService.removeFromFavorites(uuids);
+      useFileStore.getState().updateFilesFavoriteStatus(uuids, false);
+    } catch (err) {
+      console.error('Ошибка при удалении из избранного:', err);
+    }
+  };
+
   const downloadFile = useCallback(
     async (uuid: string, fileName?: string) => {
       try {
@@ -149,6 +167,8 @@ export function useFileActions() {
     downloadFile,
     downloadZip,
     downloadSelected,
-    openRenameModal
+    openRenameModal,
+    addToFavorites,
+    removeFromFavorites,
   };
 }

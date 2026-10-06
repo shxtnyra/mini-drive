@@ -39,29 +39,6 @@ public class FileService {
     private final StorageProviderFactory storageProviderFactory;
     private final Clock clock;
 
-//    @Transactional(readOnly = true)
-//    @PreAuthorize("@fileSecurity.hasAccess(#parentUuid, #jwtUser)")
-//    public FileResponses.FolderResponse getFiles(
-//            UUID parentUuid,
-//            UUID cursor,
-//            int size,
-//            JwtUserDetails jwtUser
-//    ) {
-//        Node parent = getParentFolder(parentUuid);
-//        Long parentId = parent != null ? parent.getId() : null;
-//        Long userId = jwtUser.getId();
-//
-//        List<FileResponses.Response> files = nodeRepository.findNextPage(userId, cursor, parentId, size + 1)
-//                .stream()
-//                .map(FileResponses.Response::fromEntity)
-//                .toList();
-//
-//        List<FileResponses.BreadcrumbItem> breadcrumbs = buildBreadcrumbs(parentUuid, userId);
-//
-//        return new FileResponses.FolderResponse(breadcrumbs,
-//                CursorResponse.of(files, size, FileResponses.Response::uuid));
-//    }
-
     @Transactional(readOnly = true)
     @PreAuthorize("@fileSecurity.hasAccess(#parentUuid, #jwtUser)")
     public FileResponses.FolderResponse getFilesByContext(
@@ -102,10 +79,22 @@ public class FileService {
         Map<UUID, Node> nodeMap = nodeRepository.findAllByUuidIn(uuids).stream()
                 .collect(Collectors.toMap(Node::getUuid, n -> n));
 
+        List<Long> nodeIds = nodeMap.values().stream()
+                .map(Node::getId)
+                .toList();
+
+        Set<Long> favoriteNodeIds = nodeJdbcRepository.getFavoriteNodeIds(
+                jwtUser.getId(),
+                nodeIds
+        );
+
         List<FileResponses.Response> filesResponse = uuids.stream()
                 .map(nodeMap::get)
                 .filter(Objects::nonNull)
-                .map(FileResponses.Response::fromEntity)
+                .map(node -> FileResponses.Response.fromEntity(
+                        node,
+                        favoriteNodeIds.contains(node.getId())
+                ))
                 .toList();
 
         CursorResponse<FileResponses.Response, CursorResponse.CursorDto> cursorPage = CursorResponse.of(
@@ -147,24 +136,6 @@ public class FileService {
         return FileResponses.Response.fromEntity(file);
     }
 
-    @Transactional(readOnly = true)
-    @PreAuthorize("@fileSecurity.hasAccess(#parentUuid, #jwtUser)")
-    public CursorResponse<FileResponses.Response, UUID> getTrashFiles(
-            UUID cursor,
-            int size,
-            JwtUserDetails jwtUser
-    ) {
-        Long userId = jwtUser.getId();
-
-        List<FileResponses.Response> files = nodeRepository
-                .findNextPageTrash(userId, cursor, size + 1)
-                .stream()
-                .map(FileResponses.Response::fromEntity)
-                .toList();
-
-        return CursorResponse.of(files, size, FileResponses.Response::uuid);
-    }
-
     @Transactional
     @PreAuthorize("@fileSecurity.hasAccess(#request.parentUuid(), #jwtUser)")
     public FileResponses.Response createFolder(FileRequests.CreateFolder request, JwtUserDetails jwtUser) {
@@ -190,13 +161,14 @@ public class FileService {
     @PreAuthorize("@fileSecurity.hasAccessToAll(#request.fileUuids(), #jwtUser)")
     public void deleteFile(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
         Instant now = clock.instant();
-        // Првоерок на существоание нет так как они проверяются при проверке прав
+        // Проверок на существоание нет так как они проверяются при проверке прав
         nodeRepository.markAsDeleted(request.fileUuids(), now);
     }
 
     @Transactional
     @PreAuthorize("@fileSecurity.hasAccessToAll(#request.fileUuids(), #jwtUser)")
     public void restoreFile(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
+        // Проверок на существоание нет так как они проверяются при проверке прав
         nodeRepository.unmarkAsDeleted(request.fileUuids());
     }
 
@@ -234,21 +206,17 @@ public class FileService {
     }
 
     @Transactional
-    @PreAuthorize(value = "@fileSecurity.hasAccess(#fileUuid, #jwtUser)")
-    public void makeFileFavorite(UUID fileUuid, JwtUserDetails jwtUser) {
-        Node file = nodeRepository.findByUuid(fileUuid)
-                .orElseThrow(() -> new ApiException(ErrorCode.FILE_NOT_FOUND));
-
-        nodeRepository.makeFileFavorite(file.getId(), jwtUser.getId());
+    @PreAuthorize(value = "@fileSecurity.hasAccessToAll(#request.fileUuids(), #jwtUser)")
+    public void addToFavorites(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
+        // Проверок на существоание нет так как они проверяются при проверке прав
+        nodeRepository.addToFavorites(request.fileUuids(), jwtUser.getId());
     }
 
     @Transactional
-    @PreAuthorize(value = "@fileSecurity.hasAccess(#fileUuid, #jwtUser)")
-    public void makeFileUnfavorite(UUID fileUuid, JwtUserDetails jwtUser) {
-        Node file = nodeRepository.findByUuid(fileUuid)
-                .orElseThrow(() -> new ApiException(ErrorCode.FILE_NOT_FOUND));
-
-        nodeRepository.makeFileUnfavorite(file.getId(), jwtUser.getId());
+    @PreAuthorize(value = "@fileSecurity.hasAccess(#request.fileUuids(), #jwtUser)")
+    public void removeFromFavorites(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
+        // Проверок на существоание нет так как они проверяются при проверке прав
+        nodeRepository.removeFromFavorites(request.fileUuids(), jwtUser.getId());
     }
 
     private void compressNodeRecursive(Node file, String parentPath, ZipOutputStream zipOut,  Map<Long, List<Node>> childrenMap) {

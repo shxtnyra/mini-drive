@@ -1,5 +1,5 @@
 import { api } from './client';
-import type { NodeResponse, CursorResponse, FolderResponse } from '../types/api';
+import type { NodeResponse, FolderResponse } from '../types/api';
 
 export interface GetFilesParams {
   context?: 'DRIVE' | 'TRASH' | 'SHARED' | 'FAVORITE';
@@ -42,6 +42,18 @@ export const fileService = {
     return response.data;
   },
 
+  async addToFavorites(fileUuids: string[]): Promise<void> {
+    await api.post('/files/add-to-favorites', {
+      fileUuids,
+    });
+  },
+
+  async removeFromFavorites(fileUuids: string[]): Promise<void> {
+    await api.post('/files/remove-from-favorites', {
+      fileUuids,
+    });
+  },
+
   async deleteFiles(fileUuids: string[]): Promise<void> {
     await api.delete('/files', {
       data: { fileUuids },
@@ -52,19 +64,6 @@ export const fileService = {
     await api.post('/files/restore', {
       fileUuids,
     });
-  },
-
-  async getTrash(
-    cursor?: string,
-    size: number = 50
-  ): Promise<CursorResponse<NodeResponse>> {
-    const params: Record<string, any> = { size };
-    if (cursor) params.cursor = cursor;
-
-    const response = await api.get<CursorResponse<NodeResponse>>('/files/trash', {
-      params,
-    });
-    return response.data;
   },
 
   // Скачать одиночный файл

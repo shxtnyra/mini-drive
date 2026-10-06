@@ -38,6 +38,7 @@ interface FileState {
   selectSingle: (uuid: string) => void;
   selectRange: (targetUuid: string) => void;
   toggleSelect: (uuid: string) => void;
+  updateFilesFavoriteStatus: (fileUuids: string[], isFavorite: boolean) => void;
   clearSelection: () => void;
 }
 
@@ -94,6 +95,14 @@ export const useFileStore = create<FileState>((set, get) => ({
   set((state) => ({
     files: state.files.map((file) =>
       file.uuid === updatedFile.uuid ? updatedFile : file),
+    }));
+  },
+
+  updateFilesFavoriteStatus: (fileUuids: string[], isFavorite: boolean) => {
+    set((state) => ({
+      files: state.files.map((file) =>
+        fileUuids.includes(file.uuid) ? { ...file, isFavorite } : file
+      ),
     }));
   },
 

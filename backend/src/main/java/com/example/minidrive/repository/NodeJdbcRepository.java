@@ -7,8 +7,7 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
 @Repository
 @RequiredArgsConstructor
@@ -76,6 +75,26 @@ public class NodeJdbcRepository {
             """);
         }
     }
+
+    public Set<Long> getFavoriteNodeIds(Long userId, List<Long> nodeIds) {
+        if (nodeIds.isEmpty()) {
+            return Collections.emptySet();
+        }
+
+        String sql = """
+            SELECT node_id 
+            FROM favorites 
+            WHERE user_id = :userId 
+            AND node_id IN (:nodeIds)
+            """;
+
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("userId", userId)
+                .addValue("nodeIds", nodeIds);
+
+        return new HashSet<>(jdbcTemplate.queryForList(sql, params, Long.class));
+    }
+
     private void appendOwnerFilter(StringBuilder sql, MapSqlParameterSource params, Long createdBy) {
         if (createdBy != null) {
             sql.append(" AND n.owner_id = :createdBy ");

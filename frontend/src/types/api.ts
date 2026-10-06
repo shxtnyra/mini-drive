@@ -25,6 +25,7 @@ export interface NodeResponse {
   mimeType?: string;
   sizeBytes: number;
   checksumSha256?: string;
+  isFavorite: boolean;
   isShared: boolean;
   createdAt: string;
   updatedAt: string;

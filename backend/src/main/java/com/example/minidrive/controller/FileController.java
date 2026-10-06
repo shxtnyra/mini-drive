@@ -1,13 +1,10 @@
 package com.example.minidrive.controller;
 
-import com.example.minidrive.dto.common.CursorResponse;
 import com.example.minidrive.dto.common.MessageResponse;
 import com.example.minidrive.dto.file.FileRequests;
 import com.example.minidrive.dto.file.FileResponses;
-import com.example.minidrive.enums.NodeType;
 import com.example.minidrive.security.JwtUserDetails;
 import com.example.minidrive.service.FileService;
-import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -51,16 +48,6 @@ public class FileController {
                 mimeType, createdBy, fromDate, toDate, sortBy, sortDirection, cursorValue, cursorUuid, size, jwtUser));
     }
 
-//    @GetMapping("/old")
-//    public ResponseEntity<FileResponses.FolderResponse> getListFiles(
-//            @RequestParam(required = false) UUID parentUuid,
-//            @RequestParam(required = false) UUID cursor,
-//            @RequestParam(defaultValue = "20") int size,
-//            @AuthenticationPrincipal JwtUserDetails jwtUser
-//    ) {
-//        return ResponseEntity.ok(fileService.getFiles(parentUuid, cursor, size, jwtUser));
-//    }
-
     @PostMapping("/folders")
     public ResponseEntity<FileResponses.Response> createFolder(
             @Valid @RequestBody FileRequests.CreateFolder request,
@@ -68,15 +55,6 @@ public class FileController {
     ) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(fileService.createFolder(request, jwtUser));
-    }
-
-    @GetMapping("/trash")
-    public ResponseEntity<CursorResponse<FileResponses.Response, UUID>> getTrash(
-            @RequestParam(required = false) UUID cursor,
-            @RequestParam(defaultValue = "20") int size,
-            @AuthenticationPrincipal JwtUserDetails jwtUser
-    ) {
-        return ResponseEntity.ok(fileService.getTrashFiles(cursor, size, jwtUser));
     }
 
     @PatchMapping("/{fileUuid}")
@@ -88,20 +66,21 @@ public class FileController {
         return ResponseEntity.ok(fileService.updateFile(fileUuid, request, jwtUser));
     }
 
-    @PostMapping("/{fileUuid}:favorite")
-    public ResponseEntity<MessageResponse> makeFileFavorite(
-            @PathVariable UUID fileUuid,
+    @PostMapping("/add-to-favorites")
+    public ResponseEntity<MessageResponse> addToFavorites(
+            @RequestBody FileRequests.BatchNodeRequest request,
             @AuthenticationPrincipal JwtUserDetails jwtUser
     ) {
-        fileService.makeFileFavorite(fileUuid, jwtUser);
+        fileService.addToFavorites(request, jwtUser);
         return ResponseEntity.ok(new MessageResponse("Файл добавлен в избранное"));
     }
 
-    @DeleteMapping("/{fileUuid}:favorite")
-    public ResponseEntity<MessageResponse> makeFileUnfavorite(
-            @PathVariable UUID fileUuid,
+    @PostMapping("/remove-from-favorites")
+    public ResponseEntity<MessageResponse> removeFromFavorites(
+            @RequestBody FileRequests.BatchNodeRequest request,
             @AuthenticationPrincipal JwtUserDetails jwtUser
     ) {
+        fileService.removeFromFavorites(request, jwtUser);
         return ResponseEntity.ok(new MessageResponse("Файл добавлен в избранное"));
     }
 
@@ -153,12 +132,10 @@ public class FileController {
 
         StreamingResponseBody stream = outputStream -> {
             try (ZipOutputStream zipOut = new ZipOutputStream(outputStream)) {
-                zipOut.setLevel(Deflater.NO_COMPRESSION);    // Для оптимизации
+                zipOut.setLevel(Deflater.NO_COMPRESSION);
                 fileService.streamZipFiles(request, zipOut);
             } catch (Exception e) {
                 System.err.println("КРИТИЧЕСКАЯ ОШИБКА при записи ZIP: " + e.getClass().getName() + " - " + e.getMessage());
-                e.printStackTrace(); // Это покажет точную строку, где все упало
-
             }
         };
 

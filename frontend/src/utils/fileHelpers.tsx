@@ -1,6 +1,7 @@
 import { 
   Folder, FileText, FileImage, FileVideo, FileAudio, 
-  FileArchive, FileCode, FileSpreadsheet 
+  FileArchive, FileCode, FileSpreadsheet, 
+  Star
 } from 'lucide-react';
 import type { NodeResponse } from '../types/api';
 
@@ -41,5 +42,13 @@ export const FileNameCell = ({ file }: { file: NodeResponse }) => (
     >
       {file.filename}
     </span>
+    {file.isFavorite && (
+      <Star
+        size={14}
+        strokeWidth={0}
+        aria-hidden
+        className="shrink-0 text-secondary fill-current"
+      />
+    )}
   </div>
 );

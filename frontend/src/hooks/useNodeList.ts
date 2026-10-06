@@ -33,10 +33,6 @@ export function useNodeList({ context, mode }: UseNodeListProps) {
       setFiles(response.files.items);
       
       let breadcrumbs = response.breadcrumbs;
-      if (breadcrumbs.length === 0 && mode !== 'drive') {
-         const rootName = mode === 'trash' ? 'Корзина' : mode === 'shared' ? 'Общий доступ' : 'Избранное';
-         breadcrumbs = [{ uuid: null, name: rootName }];
-      }
       setBreadcrumbs(breadcrumbs);
       
       useFileStore.setState({ 

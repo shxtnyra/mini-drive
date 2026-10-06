@@ -14,6 +14,7 @@ public class FileResponses {
     public record Response (
             UUID uuid,
             String filename,
+            boolean isFavorite,
             Long storageId,
             NodeType fileType,
             String mimeType,
@@ -24,10 +25,11 @@ public class FileResponses {
             Instant createdAt,
             Instant updatedAt
             ) {
-        public static Response fromEntity(Node node) {
+        public static Response fromEntity(Node node, boolean isFavorite) {
             return new Response(
                     node.getUuid(),
                     node.getName(),
+                    isFavorite,
                     node.getStorage() != null ? node.getStorage().getId() : null,
                     node.getNodeType(),
                     node.getMimeType(),
@@ -38,6 +40,11 @@ public class FileResponses {
                     node.getCreatedAt(),
                     node.getUpdatedAt()
             );
+        }
+
+        // Полукостыль
+        public static Response fromEntity(Node node) {
+            return fromEntity(node, false);
         }
     }
 

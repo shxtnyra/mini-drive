@@ -5,6 +5,7 @@ import io.jsonwebtoken.JwtException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
@@ -33,7 +34,11 @@ public class GlobalExceptionHandler {
                 request.getRequestURI(),
                 ex.getDetails()
         );
-        return ResponseEntity.status(code.getHttpStatus()).body(response);
+        ResponseEntity.BodyBuilder responseBuilder = ResponseEntity.status(code.getHttpStatus());
+        if (ex.getDetails() != null && ex.getDetails().get("retryAfterSeconds") instanceof Number retryAfter) {
+            responseBuilder.header(HttpHeaders.RETRY_AFTER, Long.toString(retryAfter.longValue()));
+        }
+        return responseBuilder.body(response);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

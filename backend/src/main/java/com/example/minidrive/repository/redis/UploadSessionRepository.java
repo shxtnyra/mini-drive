@@ -1,7 +1,6 @@
 package com.example.minidrive.repository.redis;
 
 import com.example.minidrive.model.redis.ChunkPartInfo;
-import com.example.minidrive.model.redis.UploadSessionData;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Repository;
@@ -14,25 +13,15 @@ import java.util.*;
 public class UploadSessionRepository {
     private final RedisTemplate<String, Object> redisTemplate;
 
-    private String getSessionKey(UUID sessionUuid) {
-        return "upload_session:" + sessionUuid;
-    }
-
     private String getPartsKey(UUID sessionUuid) {
         return "upload_session:" + sessionUuid + ":parts";
     }
 
-    public void save(UploadSessionData data, Duration ttl) {
-        redisTemplate.opsForValue().set(
-                getSessionKey(data.sessionUuid()),
-                data,
-                ttl);
-    }
-
-    public UploadSessionData findByUuid(UUID sessionUuid) {
-        return (UploadSessionData) redisTemplate.opsForValue().get(getSessionKey(sessionUuid));
-    }
-
+    /**
+     * Хранит только временный индекс загруженных частей в Redis.
+     * Метаданные сессии и резерв квоты находятся в PostgreSQL, чтобы их можно
+     * было восстановить и очистить даже после истечения Redis TTL или рестарта.
+     */
     public void addUploadedPart(UUID sessionUuid, int partNumber, String eTag, Duration ttl) {
         String partsKey = getPartsKey(sessionUuid);
         redisTemplate.opsForHash().put(partsKey, String.valueOf(partNumber), eTag);
@@ -58,7 +47,6 @@ public class UploadSessionRepository {
     }
 
     public void delete(UUID sessionUuid) {
-        redisTemplate.delete(getSessionKey(sessionUuid));
         redisTemplate.delete(getPartsKey(sessionUuid));
     }
 }

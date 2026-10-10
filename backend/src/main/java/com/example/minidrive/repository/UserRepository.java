@@ -59,6 +59,61 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @Query("UPDATE User u SET u.usedBytes = u.usedBytes + :size WHERE u.id = :id")
     void incrementUsedBytes(@Param("id") Long id, @Param("size") long size);
 
+    @Modifying
+    @Query("""
+        UPDATE User u
+        SET u.usedBytes = u.usedBytes - :size
+        WHERE u.id = :id AND u.usedBytes >= :size
+        """)
+    int decrementUsedBytes(@Param("id") Long id, @Param("size") long size);
+
+    @Modifying
+    @Query(value = """
+        UPDATE users u
+        SET reserved_bytes = u.reserved_bytes + :reservation
+        WHERE u.id = :userId
+          AND u.used_bytes + u.reserved_bytes + :reservation <= :quota
+          AND (
+              SELECT COUNT(*)
+              FROM upload_sessions s
+              WHERE s.owner_id = u.id
+                AND s.status IN ('INITIALIZING', 'UPLOADING', 'FINALIZING')
+          ) < :maxActiveUploads
+        """, nativeQuery = true)
+    int reserveUploadQuota(
+            @Param("userId") Long userId,
+            @Param("reservation") long reservation,
+            @Param("quota") long quota,
+            @Param("maxActiveUploads") int maxActiveUploads
+    );
+
+    /**
+     * Освобождает резерв ровно один раз; условие не даёт счётчику стать отрицательным.
+     */
+    @Modifying
+    @Query("""
+        UPDATE User u
+        SET u.reservedBytes = u.reservedBytes - :reservation
+        WHERE u.id = :userId AND u.reservedBytes >= :reservation
+        """)
+    int releaseUploadQuota(@Param("userId") Long userId, @Param("reservation") long reservation);
+
+    /**
+     * Атомарно переводит резерв в фактическое использование после успешной записи Node.
+     */
+    @Modifying
+    @Query("""
+        UPDATE User u
+        SET u.reservedBytes = u.reservedBytes - :reservation,
+            u.usedBytes = u.usedBytes + :actualSize
+        WHERE u.id = :userId AND u.reservedBytes >= :reservation
+        """)
+    int consumeUploadReservation(
+            @Param("userId") Long userId,
+            @Param("reservation") long reservation,
+            @Param("actualSize") long actualSize
+    );
+
     @Query(
     value = """
         SELECT u.* FROM users u

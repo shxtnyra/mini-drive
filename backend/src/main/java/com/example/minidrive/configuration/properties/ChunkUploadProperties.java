@@ -9,5 +9,6 @@ public record ChunkUploadProperties(
         long minSize,
         long maxSize,
         long defaultSize,
-        Duration sessionExpire
+        Duration sessionExpire,
+        int maxActiveUploads
 ) {}

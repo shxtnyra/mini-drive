@@ -30,7 +30,7 @@ public class Node {
     private User owner;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "parent_id", nullable = false)
+    @JoinColumn(name = "parent_id")
     private Node parent;
 
     @Enumerated(EnumType.STRING)
@@ -48,7 +48,7 @@ public class Node {
     private String checksumSha256;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "storage_id", nullable = false)
+    @JoinColumn(name = "storage_id")
     private Storage storage;
 
     @Column(name = "storage_key")

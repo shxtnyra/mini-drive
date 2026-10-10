@@ -54,6 +54,7 @@ public enum ErrorCode {
     TOO_MANY_ATTEMPTS(HttpStatus.TOO_MANY_REQUESTS, "Слишком много неверных попыток ввести код. Запросите новый"),
     TOO_MANY_REQUESTS(HttpStatus.TOO_MANY_REQUESTS, "Слишком много запросов. Попробуйте позже"),
     RATE_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "Превышен лимит запросов за определённое время"),
+    TOO_MANY_ACTIVE_UPLOADS(HttpStatus.TOO_MANY_REQUESTS, "Достигнут лимит параллельных загрузок"),
 
     // 500 Internal Error
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "Внутренняя ошибка сервера"),

@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.domain.Pageable;
 
 import com.example.minidrive.entity.Node;
 import com.example.minidrive.enums.NodeType;
@@ -20,73 +21,138 @@ public interface NodeRepository extends JpaRepository<Node, Long> {
     @Query("SELECT n.id FROM Node n WHERE n.uuid = :uuid")
     Long findIdByUuid(@Param("uuid") UUID uuid);
 
-    // Проверка доступа к ОДНОМУ узлу (учитывает владельца, прямой шеринг, шеринг группы И родительские папки)
+    /**
+     * Проверяет доступ сразу для всего набора UUID и возвращает только узлы,
+     * у которых эффективный уровень прав не ниже переданного порога.
+     *
+     * Рекурсивная часть идёт от каждого запрошенного узла вверх по родителям,
+     * поэтому прямая и унаследованная выдача прав обрабатываются одинаково.
+     * Объединение с группами и проверка срока действия share также выполняются
+     * в этом же запросе, а не отдельным SQL-вызовом для каждого файла.
+     */
+    @Query(value = """
+        WITH RECURSIVE requested AS (
+            SELECT n.uuid, n.id, n.parent_id, n.owner_id
+            FROM nodes n
+            WHERE n.uuid IN (:nodeUuids)
+        ),
+        ancestry(requested_uuid, id, parent_id, owner_id) AS (
+            SELECT r.uuid, r.id, r.parent_id, r.owner_id
+            FROM requested r
+            UNION ALL
+            SELECT a.requested_uuid, parent.id, parent.parent_id, parent.owner_id
+            FROM ancestry a
+            JOIN nodes parent ON parent.id = a.parent_id
+        ),
+        effective_access AS (
+            SELECT
+                r.uuid,
+                CASE
+                    WHEN BOOL_OR(a.owner_id = :userId) THEN 4
+                    ELSE COALESCE(MAX(
+                        CASE
+                            WHEN s.recipient_id = :userId OR ug.user_id = :userId THEN
+                                CASE s.permissions
+                                    WHEN 'READ' THEN 1
+                                    WHEN 'WRITE' THEN 2
+                                    WHEN 'ALL' THEN 3
+                                    ELSE 0
+                                END
+                            ELSE 0
+                        END
+                    ), 0)
+                END AS access_level
+            FROM requested r
+            JOIN ancestry a ON a.requested_uuid = r.uuid
+            LEFT JOIN shares s
+                ON s.node_id = a.id
+                AND s.deleted_at IS NULL
+                AND (s.expires_at IS NULL OR s.expires_at > CURRENT_TIMESTAMP)
+            LEFT JOIN user_groups ug
+                ON ug.group_id = s.group_id AND ug.user_id = :userId
+            GROUP BY r.uuid
+        )
+        SELECT uuid
+        FROM effective_access
+        WHERE access_level >= :requiredLevel
+        """, nativeQuery = true)
+    List<UUID> findUuidsWithAccessLevel(
+            @Param("nodeUuids") List<UUID> nodeUuids,
+            @Param("userId") Long userId,
+            @Param("requiredLevel") int requiredLevel
+    );
+
     @Query(value = """
         WITH RECURSIVE node_hierarchy AS (
             -- Начинаем с целевого узла
-            SELECT id, parent_id, owner_id FROM nodes WHERE uuid = :nodeUuid
+            SELECT
+                id,
+                parent_id,
+                owner_id,
+                1 AS level
+            FROM nodes
+            WHERE uuid = :nodeUuid AND deleted_at IS NULL
+
             UNION ALL
-            -- Поднимаемся вверх по иерархии к родителям
-            SELECT n.id, n.parent_id, n.owner_id
+
+            -- Рекурсивно поднимаемся к родителям
+            SELECT
+                n.id,
+                n.parent_id,
+                n.owner_id,
+                nh.level + 1
             FROM nodes n
             INNER JOIN node_hierarchy nh ON n.id = nh.parent_id
-        )
-        -- Проверяем, есть ли среди текущего узла или его родителей тот, к которому у пользователя есть доступ
-        SELECT EXISTS (
-            SELECT 1 FROM node_hierarchy nh
-            WHERE nh.owner_id = :userId
-               OR EXISTS (SELECT 1 FROM shares s WHERE s.node_id = nh.id AND s.recipient_id = :userId AND s.deleted_at IS NULL)
-               OR EXISTS (SELECT 1 FROM shares s
-                          JOIN user_groups ug ON s.group_id = ug.group_id
-                          WHERE s.node_id = nh.id AND ug.user_id = :userId AND s.deleted_at IS NULL)
-        )
-        """, nativeQuery = true)
-    boolean hasAccessToNode(@Param("nodeUuid") UUID nodeUuid, @Param("userId") Long userId);
+            WHERE n.deleted_at IS NULL
+        ),
 
-    // 2. МАССОВАЯ проверка: возвращает список UUID из запрошенных, к которым у пользователя ЕСТЬ доступ
-    @Query(value = """
-        SELECT n.uuid FROM nodes n
-        WHERE n.uuid IN (:nodeUuids)
-        AND (
-            n.owner_id = :userId
-            OR EXISTS (SELECT 1 FROM shares s WHERE s.node_id = n.id AND s.recipient_id = :userId AND s.deleted_at IS NULL)
-            OR EXISTS (SELECT 1 FROM shares s
-                       JOIN user_groups ug ON s.group_id = ug.group_id
-                       WHERE s.node_id = n.id AND ug.user_id = :userId AND s.deleted_at IS NULL)
+        -- Преобразуем строковые права в числовые
+        permission_levels AS (
+            SELECT
+                'READ' AS perm_name, 1 AS perm_value
+            UNION ALL
+            SELECT 'WRITE', 2
+            UNION ALL
+            SELECT 'ALL', 3
+            UNION ALL
+            SELECT 'OWNER', 4
+        ),
+
+        -- Собираем все шары для узла и его родителей
+        all_shares AS (
+            SELECT
+                s.permissions,
+                pl.perm_value
+            FROM shares s
+            JOIN permission_levels pl ON s.permissions = pl.perm_name
+            LEFT JOIN user_groups ug ON s.group_id = ug.group_id
+            WHERE s.node_id IN (SELECT id FROM node_hierarchy)
+              AND s.deleted_at IS NULL
+              AND (s.expires_at IS NULL OR s.expires_at > NOW())
+              AND (s.recipient_id = :userId OR ug.user_id = :userId)
+        ),
+
+        -- Проверяем, является ли пользователь владельцем узла или любого из родителей
+        ownership_check AS (
+            SELECT
+                CASE
+                    WHEN EXISTS (
+                        SELECT 1 FROM node_hierarchy WHERE owner_id = :userId
+                    ) THEN 4
+                    ELSE 0
+                END AS owner_level
         )
-        """, nativeQuery = true)
-    List<UUID> findAccessibleNodeUuids(@Param("nodeUuids") List<UUID> nodeUuids, @Param("userId") Long userId);
-
-    // Примечание: Для массовой проверки мы пока не используем рекурсивный CTE для родителей,
-    // так как это может быть тяжело для больших списков.
-    // На практике, если пользователь видит файл в UI (через getFilesByContext), он уже имеет к нему доступ.
-    // Эта проверка защищает от прямой подмены UUID в API. Если нужна 100% строгость для вложенных файлов,
-
-    /*
-        MAX(s.permissions) сработает, потому что в PostgreSQL строки сравниваются лексикографически.
-        Если у тебя в enum порядок ALL > WRITE > READ,
-        то MAX вернет самый высокий уровень.
-     */
-    @Query(value = """
-        SELECT
-            CASE
-                -- 1. Если пользователь владелец, у него полные права (OWNER)
-                WHEN n.owner_id = :userId THEN 'OWNER'
         
-                -- 2. Иначе ищем максимальное право в таблице shares (для пользователя или его групп)
-                ELSE (
-                    SELECT MAX(s.permissions)
-                    FROM shares s
-                    LEFT JOIN user_groups ug ON s.group_id = ug.group_id
-                    WHERE s.node_id = n.id
-                      AND s.deleted_at IS NULL
-                      AND (s.recipient_id = :userId OR ug.user_id = :userId)
-                )
-            END AS access_level
-        FROM nodes n
-        WHERE n.uuid = :nodeUuid
+        -- Возвращаем максимальный уровень доступа
+        SELECT COALESCE(
+            GREATEST(
+                (SELECT owner_level FROM ownership_check),
+                (SELECT COALESCE(MAX(perm_value), 0) FROM all_shares)
+            ),
+            0
+        ) AS access_level
         """, nativeQuery = true)
-    String getUserAccessLevel(@Param("nodeUuid") UUID nodeUuid, @Param("userId") Long userId);
+    Integer getUserAccessLevel(@Param("nodeUuid") UUID nodeUuid, @Param("userId") Long userId);
 
     @Query(value = """
     WITH RECURSIVE breadcrumb_path AS (
@@ -164,6 +230,41 @@ public interface NodeRepository extends JpaRepository<Node, Long> {
     List<Node> findAllSubtreeByRootUuids(@Param("uuids") List<UUID> uuids);
 
     List<Node> findAllByUuidIn(List<UUID> uuids);
+
+    /**
+     * Берёт ограниченную страницу файлов, срок хранения которых в корзине истёк.
+     * Storage удаляется сервисом до удаления этой записи из базы.
+     */
+    @Query("""
+        SELECT n FROM Node n
+        WHERE n.nodeType = :nodeType
+          AND n.deletedAt IS NOT NULL
+          AND n.deletedAt <= :deletedBefore
+        ORDER BY n.deletedAt, n.id
+        """)
+    List<Node> findExpiredTrashNodes(
+            @Param("nodeType") NodeType nodeType,
+            @Param("deletedBefore") Instant deletedBefore,
+            Pageable pageable
+    );
+
+    /**
+     * Удаляет только пустые папки из корзины. Непустые папки не каскадно
+     * удаляются: это сохраняет выбранную семантику «удаляется сама папка».
+     */
+    @Query("""
+        SELECT n FROM Node n
+        WHERE n.nodeType = :nodeType
+          AND n.deletedAt IS NOT NULL
+          AND n.deletedAt <= :deletedBefore
+          AND NOT EXISTS (SELECT child.id FROM Node child WHERE child.parent = n)
+        ORDER BY n.deletedAt, n.id
+        """)
+    List<Node> findExpiredEmptyTrashFolders(
+            @Param("nodeType") NodeType nodeType,
+            @Param("deletedBefore") Instant deletedBefore,
+            Pageable pageable
+    );
 
     @Modifying
     @Query(value = """

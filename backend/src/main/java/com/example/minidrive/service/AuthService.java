@@ -166,6 +166,7 @@ public class AuthService {
 
         return new AuthResponses.Tokens(newAccessToken, newRefreshTokenStr);
     }
+
     @Transactional
     public AuthResponses.Tokens verifyEmail(AuthRequests.VerifyEmail request, JwtUserDetails jwtUser, ClientInfo clientInfo) {
         User user = findUserByUuidOrThrow(jwtUser.getUuid());
@@ -192,9 +193,9 @@ public class AuthService {
         rateLimiterService.checkAndRecord(
                 "email_verification",
                 user.getId().toString(),
-                emailCodeProperties.cooldown().toSecondsPart(),
+                emailCodeProperties.cooldown(),
                 emailCodeProperties.maxRequestsPerHour(),
-                60
+                Duration.ofHours(1)
         );
 
         String code = generateSixDigitCode();
@@ -208,6 +209,7 @@ public class AuthService {
 
         emailSendService.sendVerificationCode(user.getEmail(), code);
     }
+
     @Transactional
     public void requestEmailChange(AuthRequests.EmailChange request, JwtUserDetails jwtUser) {
         User user = findUserByUuidOrThrow(jwtUser.getUuid());
@@ -246,6 +248,7 @@ public class AuthService {
 
         return issueTokenPair(user, clientInfo, now);
     }
+
     @Transactional
     public void changePassword(JwtUserDetails jwtUser, AuthRequests.ChangePassword request) {
         if (request.oldPassword().equals(request.newPassword()))
@@ -268,9 +271,9 @@ public class AuthService {
         rateLimiterService.checkAndRecord(
                 "password_reset",
                 request.email().toLowerCase(),
-                emailCodeProperties.cooldown().toSecondsPart(),
+                emailCodeProperties.cooldown(),
                 emailCodeProperties.maxRequestsPerHour(),
-                60
+                Duration.ofHours(1)
         );
 
         userRepository.findByEmail(request.email()).ifPresent(user -> {
@@ -286,6 +289,7 @@ public class AuthService {
             emailSendService.sendPasswordResetCode(request.email(), code);
         });
     }
+
     @Transactional
     public AuthResponses.Tokens verifyPasswordResetCode(
             AuthRequests.VerifyPasswordReset request) {

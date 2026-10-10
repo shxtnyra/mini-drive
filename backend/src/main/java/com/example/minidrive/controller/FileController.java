@@ -3,9 +3,11 @@ package com.example.minidrive.controller;
 import com.example.minidrive.dto.common.MessageResponse;
 import com.example.minidrive.dto.file.FileRequests;
 import com.example.minidrive.dto.file.FileResponses;
+import com.example.minidrive.enums.Context;
 import com.example.minidrive.security.JwtUserDetails;
 import com.example.minidrive.service.FileService;
 import jakarta.validation.Valid;
+import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
@@ -16,24 +18,27 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
-import java.util.zip.Deflater;
-import java.util.zip.ZipOutputStream;
 
 @RestController
 @RequestMapping("api/v1/files")
 @RequiredArgsConstructor
+@Slf4j
 public class FileController {
     private final FileService fileService;
 
     @GetMapping
     public ResponseEntity<FileResponses.FolderResponse> getListFiles(
-            @RequestParam(required = false, defaultValue = "DRIVE") String context,
+            @RequestParam(required = false, defaultValue = "DRIVE") Context context,
             @RequestParam(required = false) UUID parentUuid,
             @RequestParam(required = false) String nodeType,
-            @RequestParam(required = false) String mimeType,
+            @RequestParam(required = false) List<String> mimeTypes,
             @RequestParam(required = false) UUID createdBy,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant fromDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant toDate,
@@ -45,7 +50,7 @@ public class FileController {
             @AuthenticationPrincipal JwtUserDetails jwtUser
     ) {
         return ResponseEntity.ok(fileService.getFilesByContext(context, parentUuid, nodeType,
-                mimeType, createdBy, fromDate, toDate, sortBy, sortDirection, cursorValue, cursorUuid, size, jwtUser));
+                mimeTypes, createdBy, fromDate, toDate, sortBy, sortDirection, cursorValue, cursorUuid, size, jwtUser));
     }
 
     @PostMapping("/folders")
@@ -68,7 +73,7 @@ public class FileController {
 
     @PostMapping("/add-to-favorites")
     public ResponseEntity<MessageResponse> addToFavorites(
-            @RequestBody FileRequests.BatchNodeRequest request,
+            @Valid @RequestBody FileRequests.BatchNodeRequest request,
             @AuthenticationPrincipal JwtUserDetails jwtUser
     ) {
         fileService.addToFavorites(request, jwtUser);
@@ -77,7 +82,7 @@ public class FileController {
 
     @PostMapping("/remove-from-favorites")
     public ResponseEntity<MessageResponse> removeFromFavorites(
-            @RequestBody FileRequests.BatchNodeRequest request,
+            @Valid @RequestBody FileRequests.BatchNodeRequest request,
             @AuthenticationPrincipal JwtUserDetails jwtUser
     ) {
         fileService.removeFromFavorites(request, jwtUser);
@@ -86,7 +91,7 @@ public class FileController {
 
     @DeleteMapping()
     public ResponseEntity<MessageResponse> deleteFile(
-            @RequestBody FileRequests.BatchNodeRequest request,
+            @Valid @RequestBody FileRequests.BatchNodeRequest request,
             @AuthenticationPrincipal JwtUserDetails jwtUser
     ) {
         fileService.deleteFile(request, jwtUser);
@@ -95,7 +100,7 @@ public class FileController {
 
     @PostMapping("/restore")
     public ResponseEntity<MessageResponse> restoreFile(
-            @RequestBody FileRequests.BatchNodeRequest request,
+            @Valid @RequestBody FileRequests.BatchNodeRequest request,
             @AuthenticationPrincipal JwtUserDetails jwtUser
     ) {
         fileService.restoreFile(request, jwtUser);
@@ -125,23 +130,42 @@ public class FileController {
 
     @PostMapping("/download-zip")
     public ResponseEntity<StreamingResponseBody> downloadFilesAsZip  (
-            @RequestBody FileRequests.BatchNodeRequest request,
+            @Valid @RequestBody FileRequests.BatchNodeRequest request,
             @AuthenticationPrincipal JwtUserDetails jwtUser
     ) {
         fileService.validateZipAccess(request, jwtUser);
+        Path archive = fileService.createZipArchive(request);
+        long archiveSize;
+        try {
+            archiveSize = Files.size(archive);
+        } catch (IOException exception) {
+            deleteTemporaryArchive(archive);
+            throw new IllegalStateException("Could not inspect completed ZIP archive", exception);
+        }
 
         StreamingResponseBody stream = outputStream -> {
-            try (ZipOutputStream zipOut = new ZipOutputStream(outputStream)) {
-                zipOut.setLevel(Deflater.NO_COMPRESSION);
-                fileService.streamZipFiles(request, zipOut);
-            } catch (Exception e) {
-                System.err.println("КРИТИЧЕСКАЯ ОШИБКА при записи ZIP: " + e.getClass().getName() + " - " + e.getMessage());
+            try {
+                Files.copy(archive, outputStream);
+            } catch (IOException exception) {
+                log.warn("ZIP download stream failed for user {}", jwtUser.getId(), exception);
+                throw exception;
+            } finally {
+                deleteTemporaryArchive(archive);
             }
         };
 
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType("application/zip"))
+                .contentLength(archiveSize)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"archive.zip\"")
                 .body(stream);
+    }
+
+    private void deleteTemporaryArchive(Path archive) {
+        try {
+            Files.deleteIfExists(archive);
+        } catch (IOException exception) {
+            log.error("Не удалось удалить временный архив {}", archive, exception);
+        }
     }
 }

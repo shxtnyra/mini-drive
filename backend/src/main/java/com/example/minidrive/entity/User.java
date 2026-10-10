@@ -38,12 +38,16 @@ public class User {
     @Column(name = "display_name")
     private String displayName;
 
-    @Column(name = "quota_bytes", nullable = false)
+    @Column(name = "quota_bytes")
     private Long quotaBytes;
 
     @Builder.Default
     @Column(name = "used_bytes", nullable = false)
     private Long usedBytes = 0L;
+
+    @Builder.Default
+    @Column(name = "reserved_bytes", nullable = false)
+    private Long reservedBytes = 0L;
 
     @Builder.Default
     @Column(name = "is_admin", nullable = false)

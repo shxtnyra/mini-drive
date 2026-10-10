@@ -22,10 +22,10 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
   mail:
-    host: ${MAIL_HOST:smtp.mail.ru}
-    port: ${MAIL_PORT:465}
-    username: ${MAIL_USERNAME:shurik.knv@mail.ru}
-    password: ${MAIL_PASSWORD:oOGedgleZYxlk9EdDfYR}
+    host: ${MAIL_HOST}
+    port: ${MAIL_PORT}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
     properties:
       mail:
         smtp:
@@ -44,7 +44,7 @@ spring:
 
 app:
   jwt:
-    access-secret: ${JWT_ACCESS_SECRET:super_secret_access_key_must_be_at_least_32_chars_long!!!}
+    access-secret: ${JWT_ACCESS_SECRET}
     access-expiration-ms: 900000
     refresh-expiration-ms: 2592000000
   cors:
@@ -68,6 +68,11 @@ app:
     max-size: 52428800        # 50 MB
     default-size: 10485760    # 10 MB
     session-expire: 24h
+    max-active-uploads: 3
+  trash:
+    retention: 30d
+  cleanup:
+    fixed-delay: 1h
 
 management:
   endpoints:

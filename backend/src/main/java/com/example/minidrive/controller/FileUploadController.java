@@ -26,7 +26,7 @@ public class FileUploadController {
      * Проверяет квоту пользователя и имя файла в папке, резервирует UploadSession.
      */
     @PostMapping("/initiate")
-    @PreAuthorize("@fileSecurity.canModify(#request.parentUuid(), #jwtUser)") // <-- ДОБАВИТЬ ЭТО
+    @PreAuthorize("@fileSecurity.canCreateInRoot(#request.parentUuid(), #jwtUser) or @fileSecurity.canModify(#request.parentUuid(), #jwtUser)")
     public ResponseEntity<FileResponses.BeginUpload> initiateUpload(
             @AuthenticationPrincipal JwtUserDetails jwtUser,
             @Valid @RequestBody FileRequests.BeginUpload request
@@ -41,9 +41,10 @@ public class FileUploadController {
     public ResponseEntity<Void> uploadChunk(
             @PathVariable UUID sessionUuid,
             @RequestParam("partNumber") int partNumber,
-            @RequestParam("file") MultipartFile chunk) {
+            @RequestParam("file") MultipartFile chunk,
+            @AuthenticationPrincipal JwtUserDetails jwtUser) {
 
-        fileUploadService.uploadChunk(sessionUuid, partNumber, chunk);
+        fileUploadService.uploadChunk(sessionUuid, partNumber, chunk, jwtUser);
         return ResponseEntity.ok().build();
     }
 
@@ -51,8 +52,10 @@ public class FileUploadController {
      * 3. Получение списка уже загруженных чанков для возобновления при сбое связи.
      */
     @GetMapping("/{sessionUuid}/status")
-    public ResponseEntity<FileResponses.UploadStatus> getUploadStatus(@PathVariable UUID sessionUuid) {
-        return ResponseEntity.ok(fileUploadService.getUploadStatus(sessionUuid));
+    public ResponseEntity<FileResponses.UploadStatus> getUploadStatus(
+            @PathVariable UUID sessionUuid,
+            @AuthenticationPrincipal JwtUserDetails jwtUser) {
+        return ResponseEntity.ok(fileUploadService.getUploadStatus(sessionUuid, jwtUser));
     }
 
     /**
@@ -60,8 +63,10 @@ public class FileUploadController {
      * Вызывает склейку чанков в StorageProvider, создает Node в БД и обновляет used_bytes пользователя.
      */
     @PostMapping("/{sessionUuid}:complete")
-    public ResponseEntity<FileResponses.Response> completeUpload(@PathVariable UUID sessionUuid) {
-        return ResponseEntity.ok(fileUploadService.completeUpload(sessionUuid));
+    public ResponseEntity<FileResponses.Response> completeUpload(
+            @PathVariable UUID sessionUuid,
+            @AuthenticationPrincipal JwtUserDetails jwtUser) {
+        return ResponseEntity.ok(fileUploadService.completeUpload(sessionUuid, jwtUser));
     }
 
     /**
@@ -69,8 +74,10 @@ public class FileUploadController {
      * Очищает временные куски файла в StorageProvider и удаляет сессию в Redis.
      */
     @DeleteMapping("/{sessionUuid}:abort")
-    public ResponseEntity<Void> abortUpload(@PathVariable UUID sessionUuid) {
-        fileUploadService.abortUpload(sessionUuid);
+    public ResponseEntity<Void> abortUpload(
+            @PathVariable UUID sessionUuid,
+            @AuthenticationPrincipal JwtUserDetails jwtUser) {
+        fileUploadService.abortUpload(sessionUuid, jwtUser);
         return ResponseEntity.noContent().build();
     }
 

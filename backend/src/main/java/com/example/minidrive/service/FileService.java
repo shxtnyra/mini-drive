@@ -2,6 +2,8 @@ package com.example.minidrive.service;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.*;
@@ -9,8 +11,10 @@ import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+import com.example.minidrive.enums.Context;
 import com.example.minidrive.provider.StorageProvider;
 import com.example.minidrive.provider.StorageProviderFactory;
+import com.example.minidrive.repository.FileVersionRepository;
 import com.example.minidrive.repository.NodeJdbcRepository;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -29,12 +33,16 @@ import com.example.minidrive.repository.UserRepository;
 import com.example.minidrive.security.JwtUserDetails;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class FileService {
     private final NodeRepository nodeRepository;
     private final NodeJdbcRepository nodeJdbcRepository;
+    private final FileVersionRepository fileVersionRepository;
     private final UserRepository userRepository;
     private final StorageProviderFactory storageProviderFactory;
     private final Clock clock;
@@ -42,10 +50,10 @@ public class FileService {
     @Transactional(readOnly = true)
     @PreAuthorize("@fileSecurity.hasAccess(#parentUuid, #jwtUser)")
     public FileResponses.FolderResponse getFilesByContext(
-            String context,
+            Context context,
             UUID parentUuid,
             String nodeType,
-            String mimeType,
+            List<String> mimeTypes,
             UUID createdBy,
             Instant fromDate,
             Instant toDate,
@@ -61,41 +69,20 @@ public class FileService {
         Long cursorId = (cursorUuid != null) ? nodeRepository.findIdByUuid(cursorUuid) : null;
         Object parsedCursorValue = parseCursorValue(cursorValue, sortBy);
 
-        List<UUID> uuids = nodeJdbcRepository.findNodeUuidsWithFilters(
+        List<FileResponses.Response> filesResponse = nodeJdbcRepository.findFileResponsesWithFilters(
                 context, jwtUser.getId(), parentId,
-                nodeType, mimeType, createdById, fromDate, toDate,
+                nodeType, mimeTypes, createdById, fromDate, toDate,
                 sortBy, sortDirection, parsedCursorValue, cursorId, size
         );
 
         List<FileResponses.BreadcrumbItem> breadcrumbs = buildBreadcrumbs(parentUuid, jwtUser.getId());
 
-        if (uuids.isEmpty()) {
+        if (filesResponse.isEmpty()) {
             return new FileResponses.FolderResponse(
                     breadcrumbs,
                     CursorResponse.of()
             );
         }
-
-        Map<UUID, Node> nodeMap = nodeRepository.findAllByUuidIn(uuids).stream()
-                .collect(Collectors.toMap(Node::getUuid, n -> n));
-
-        List<Long> nodeIds = nodeMap.values().stream()
-                .map(Node::getId)
-                .toList();
-
-        Set<Long> favoriteNodeIds = nodeJdbcRepository.getFavoriteNodeIds(
-                jwtUser.getId(),
-                nodeIds
-        );
-
-        List<FileResponses.Response> filesResponse = uuids.stream()
-                .map(nodeMap::get)
-                .filter(Objects::nonNull)
-                .map(node -> FileResponses.Response.fromEntity(
-                        node,
-                        favoriteNodeIds.contains(node.getId())
-                ))
-                .toList();
 
         CursorResponse<FileResponses.Response, CursorResponse.CursorDto> cursorPage = CursorResponse.of(
                 filesResponse,
@@ -106,9 +93,28 @@ public class FileService {
         return new FileResponses.FolderResponse(breadcrumbs, cursorPage);
     }
 
+    /**
+     * Окончательно удаляет один файл
+     */
+    @Transactional
+    public void purgeExpiredTrashFile(UUID nodeUuid, Instant deletedBefore) {
+        Node file = nodeRepository.findByUuid(nodeUuid).orElse(null);
+        if (file == null
+                || file.getNodeType() != NodeType.FILE
+                || file.getDeletedAt() == null
+                || file.getDeletedAt().isAfter(deletedBefore)) {
+            return;
+        }
+
+        storageProviderFactory.getProvider(file.getStorage()).delete(file.getStorageKey());
+        nodeRepository.delete(file);
+        if (userRepository.decrementUsedBytes(file.getOwner().getId(), file.getSizeBytes()) != 1) {
+            throw new IllegalStateException("Не удалось обновить квоту после окончательного удаления файла.");
+        }
+    }
 
     @Transactional(readOnly = true)
-    @PreAuthorize("@fileSecurity.hasAccessToAll(#request.fileUuids(), #jwtUser)")
+    @PreAuthorize("@fileSecurity.canReadAll(#request, #jwtUser)")
     public void validateZipAccess(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
         if (request == null || request.fileUuids() == null || request.fileUuids().isEmpty()) {
             throw new ApiException(ErrorCode.FILE_NOT_FOUND);
@@ -120,7 +126,7 @@ public class FileService {
     }
 
     @Transactional()
-    @PreAuthorize("@fileSecurity.hasAccess(#parentUuid, #jwtUser)")
+    @PreAuthorize("@fileSecurity.canModify(#fileUuid, #jwtUser)")
     public FileResponses.Response updateFile(
             UUID fileUuid,
             FileRequests.UpdateFile request,
@@ -137,7 +143,7 @@ public class FileService {
     }
 
     @Transactional
-    @PreAuthorize("@fileSecurity.hasAccess(#request.parentUuid(), #jwtUser)")
+    @PreAuthorize("@fileSecurity.canCreateInRoot(#request.parentUuid(), #jwtUser) or @fileSecurity.canModify(#request.parentUuid(), #jwtUser)")
     public FileResponses.Response createFolder(FileRequests.CreateFolder request, JwtUserDetails jwtUser) {
         Node parent = getParentFolder(request.parentUuid());
         User owner = userRepository.getReferenceById(jwtUser.getId());
@@ -158,7 +164,7 @@ public class FileService {
     }
 
     @Transactional
-    @PreAuthorize("@fileSecurity.hasAccessToAll(#request.fileUuids(), #jwtUser)")
+    @PreAuthorize("@fileSecurity.canDeleteAll(#request, #jwtUser)")
     public void deleteFile(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
         Instant now = clock.instant();
         // Проверок на существоание нет так как они проверяются при проверке прав
@@ -166,7 +172,7 @@ public class FileService {
     }
 
     @Transactional
-    @PreAuthorize("@fileSecurity.hasAccessToAll(#request.fileUuids(), #jwtUser)")
+    @PreAuthorize("@fileSecurity.canDeleteAll(#request, #jwtUser)")
     public void restoreFile(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
         // Проверок на существоание нет так как они проверяются при проверке прав
         nodeRepository.unmarkAsDeleted(request.fileUuids());
@@ -189,7 +195,30 @@ public class FileService {
         );
     }
 
-    public void streamZipFiles(FileRequests.BatchNodeRequest request, ZipOutputStream zipOut) {
+    @Transactional(readOnly = true)
+    public Path createZipArchive(FileRequests.BatchNodeRequest request) {
+        Path archive = null;
+        try {
+            archive = Files.createTempFile("mini-drive-download-", ".zip");
+            try (ZipOutputStream zipOut = new ZipOutputStream(Files.newOutputStream(archive))) {
+                zipOut.setLevel(java.util.zip.Deflater.NO_COMPRESSION);
+                streamZipFiles(request, zipOut);
+            }
+            return archive;
+        } catch (IOException | RuntimeException exception) {
+            log.error("Ошибка при создании temp архива", exception);
+            if (archive != null) {
+                try {
+                    Files.deleteIfExists(archive);
+                } catch (IOException cleanupException) {
+                    exception.addSuppressed(cleanupException);
+                }
+            }
+            throw new ApiException(ErrorCode.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    private void streamZipFiles(FileRequests.BatchNodeRequest request, ZipOutputStream zipOut) {
         List<Node> allNodesInTree = nodeRepository.findAllSubtreeByRootUuids(request.fileUuids());
 
         Map<Long, List<Node>> childrenMap = allNodesInTree.stream()
@@ -206,21 +235,20 @@ public class FileService {
     }
 
     @Transactional
-    @PreAuthorize(value = "@fileSecurity.hasAccessToAll(#request.fileUuids(), #jwtUser)")
+    @PreAuthorize(value = "@fileSecurity.canReadAll(#request, #jwtUser)")
     public void addToFavorites(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
-        // Проверок на существоание нет так как они проверяются при проверке прав
+        // Проверок на существование нет так как они проверяются при проверке прав
         nodeRepository.addToFavorites(request.fileUuids(), jwtUser.getId());
     }
 
     @Transactional
-    @PreAuthorize(value = "@fileSecurity.hasAccess(#request.fileUuids(), #jwtUser)")
+    @PreAuthorize(value = "@fileSecurity.canReadAll(#request, #jwtUser)")
     public void removeFromFavorites(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
-        // Проверок на существоание нет так как они проверяются при проверке прав
+        // Проверок на существование нет так как они проверяются при проверке прав
         nodeRepository.removeFromFavorites(request.fileUuids(), jwtUser.getId());
     }
 
     private void compressNodeRecursive(Node file, String parentPath, ZipOutputStream zipOut,  Map<Long, List<Node>> childrenMap) {
-        // Формируем правильный путь для текущего узла (файла или папки)
         String currentPath = parentPath.isEmpty()
                 ? file.getName()
                 : parentPath + "/" + file.getName();

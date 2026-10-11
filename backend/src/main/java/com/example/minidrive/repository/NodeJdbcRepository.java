@@ -20,11 +20,7 @@ public class NodeJdbcRepository {
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
 
-    /**
-     * Читает сразу готовые поля ответа, не загружая JPA-сущности и lazy-связи.
-     * Поэтому стоимость запроса не растёт дополнительным SELECT для владельца,
-     * родителя и избранного у каждой строки списка.
-     */
+    /** Выбирает поля DTO одним запросом, включая связанные данные владельца и родителя. */
     public List<FileResponses.Response> findFileResponsesWithFilters(
             Context context,
             Long userId,
@@ -78,10 +74,6 @@ public class NodeJdbcRepository {
         return jdbcTemplate.query(sql.toString(), params, this::mapResponse);
     }
 
-    /**
-     * Преобразует одну SQL-строку в DTO. Все связи уже пришли через JOIN
-     * во избежание лишних запросов
-     * */
     private FileResponses.Response mapResponse(ResultSet rs, int rowNumber) throws SQLException {
         return new FileResponses.Response(
                 rs.getObject("uuid", UUID.class),

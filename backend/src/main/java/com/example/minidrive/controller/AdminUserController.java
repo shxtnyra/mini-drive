@@ -42,11 +42,6 @@ public class AdminUserController {
         return ResponseEntity.ok(new MessageResponse("Все сессии пользователя завершены"));
     }
 
-//    @PostMapping("{uuid:reset-password}")
-//    public ResponseEntity<MessageResponse> resetUserPassword(@PathVariable UUID uuid) {
-//
-//    }
-
     @PostMapping("/{uuid}:set-quota")
     public ResponseEntity<UserResponses.Detail> updateUserQuota(
             @PathVariable UUID uuid,

@@ -18,11 +18,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Периодически освобождает storage и DB-метаданные для просроченных объектов.
- * Каждая запись обрабатывается отдельным транзакционным вызовом сервиса:
- * ошибка на одном объекте не отменяет уже успешно обработанные элементы batch.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -63,12 +58,17 @@ public class StorageCleanupScheduler {
                 PageRequest.of(0, BATCH_SIZE)
         );
 
+        int processedSessions = 0;
         for (var session : expiredSessions) {
             try {
                 fileUploadService.cleanupExpiredUpload(session.getSessionUuid());
+                processedSessions++;
             } catch (RuntimeException exception) {
                 log.error("Не удалось очистить сеанс загрузки с истекшим сроком действия {}", session.getSessionUuid(), exception);
             }
+        }
+        if (processedSessions > 0) {
+            log.info("Обработано просроченных upload-сессий: {}", processedSessions);
         }
     }
 
@@ -82,12 +82,17 @@ public class StorageCleanupScheduler {
                 .map(Node::getUuid)
                 .toList();
 
+        int processedFiles = 0;
         for (UUID fileUuid : expiredFiles) {
             try {
                 fileService.purgeExpiredTrashFile(fileUuid, deletedBefore);
+                processedFiles++;
             } catch (RuntimeException exception) {
                 log.error("Не удалось очистить файл с истекшим сроком действия {}", fileUuid, exception);
             }
+        }
+        if (processedFiles > 0) {
+            log.info("Обработано просроченных файлов из корзины: {}", processedFiles);
         }
     }
 

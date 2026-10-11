@@ -34,7 +34,6 @@ import com.example.minidrive.security.JwtUserDetails;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.PageRequest;
 
 @Service
 @RequiredArgsConstructor
@@ -93,9 +92,6 @@ public class FileService {
         return new FileResponses.FolderResponse(breadcrumbs, cursorPage);
     }
 
-    /**
-     * Окончательно удаляет один файл
-     */
     @Transactional
     public void purgeExpiredTrashFile(UUID nodeUuid, Instant deletedBefore) {
         Node file = nodeRepository.findByUuid(nodeUuid).orElse(null);
@@ -120,9 +116,7 @@ public class FileService {
             throw new ApiException(ErrorCode.FILE_NOT_FOUND);
         }
 
-        // Аннотация @PreAuthorize автоматически проверит доступ ко всем request.fileUuids().
-        // Если доступа нет — Spring сразу выбросит AccessDeniedException (403 Forbidden)
-        // до того, как откроется асинхронный поток StreamingResponseBody.
+        // Проверка выполняется до запуска асинхронной передачи ZIP-архива.
     }
 
     @Transactional()
@@ -167,14 +161,12 @@ public class FileService {
     @PreAuthorize("@fileSecurity.canDeleteAll(#request, #jwtUser)")
     public void deleteFile(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
         Instant now = clock.instant();
-        // Проверок на существоание нет так как они проверяются при проверке прав
         nodeRepository.markAsDeleted(request.fileUuids(), now);
     }
 
     @Transactional
     @PreAuthorize("@fileSecurity.canDeleteAll(#request, #jwtUser)")
     public void restoreFile(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
-        // Проверок на существоание нет так как они проверяются при проверке прав
         nodeRepository.unmarkAsDeleted(request.fileUuids());
     }
 
@@ -206,7 +198,7 @@ public class FileService {
             }
             return archive;
         } catch (IOException | RuntimeException exception) {
-            log.error("Ошибка при создании temp архива", exception);
+            log.error("Ошибка при создании ZIP для узлов {}", request.fileUuids(), exception);
             if (archive != null) {
                 try {
                     Files.deleteIfExists(archive);
@@ -237,14 +229,12 @@ public class FileService {
     @Transactional
     @PreAuthorize(value = "@fileSecurity.canReadAll(#request, #jwtUser)")
     public void addToFavorites(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
-        // Проверок на существование нет так как они проверяются при проверке прав
         nodeRepository.addToFavorites(request.fileUuids(), jwtUser.getId());
     }
 
     @Transactional
     @PreAuthorize(value = "@fileSecurity.canReadAll(#request, #jwtUser)")
     public void removeFromFavorites(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
-        // Проверок на существование нет так как они проверяются при проверке прав
         nodeRepository.removeFromFavorites(request.fileUuids(), jwtUser.getId());
     }
 
@@ -314,13 +304,12 @@ public class FileService {
             case "name" -> file.filename();
             case "size" -> String.valueOf(file.sizeBytes());
             case "updatedAt" -> file.updatedAt() != null ? file.updatedAt().toString() : file.createdAt().toString();
-            default -> file.createdAt().toString(); // По умолчанию createdAt
+            default -> file.createdAt().toString();
         };
 
         return new CursorResponse.CursorDto(value, file.uuid());
     }
 
-    // TODO: можно кешировать в redis
     private List<FileResponses.BreadcrumbItem> buildBreadcrumbs(UUID folderUuid, Long userId) {
         if (folderUuid == null) {
             return List.of();

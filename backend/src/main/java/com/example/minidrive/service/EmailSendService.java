@@ -42,7 +42,6 @@ public class EmailSendService {
         sendSimpleEmail(email, "Сброс пароля MiniDrive", text);
     }
 
-    // TODO: Добавить try catch
     private void sendSimpleEmail(String toEmail, String subject, String text) {
         SimpleMailMessage message = new SimpleMailMessage();
 

@@ -42,7 +42,6 @@ public class StorageProviderFactory {
 
     private StorageProvider createStorageProvider(Storage storage) {
         return switch (storage.getType()) {
-//            case S3 -> new MinioStorageProvider(storage.getConfig());
             case LOCAL -> new LocalStorageProvider(storage.getConfig());
             default -> throw new IllegalArgumentException("Не поддерживаемый тип хранилища: "
                     + storage.getType());

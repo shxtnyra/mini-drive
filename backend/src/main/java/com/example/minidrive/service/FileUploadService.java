@@ -23,7 +23,6 @@ import com.example.minidrive.repository.redis.UploadSessionRepository;
 import com.example.minidrive.security.JwtUserDetails;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -55,12 +54,7 @@ public class FileUploadService {
     private final UploadSessionRepository redisRepository;
     private final Clock clock;
 
-    /**
-     * Создаёт долговечную запись upload-сессии и резервирует заявленный объём
-     * в одной DB-транзакции. Резерв блокирует превышение квоты при параллельных
-     * запросах, а лимит активных сессий не позволяет одному пользователю
-     * одновременно открыть неограниченное число multipart-загрузок.
-     */
+    /** Создаёт сессию и резервирует квоту до начала передачи частей. */
     @Transactional
     public FileResponses.BeginUpload initiateUpload(JwtUserDetails jwtUser, FileRequests.BeginUpload request) {
         User owner = userRepository.findById(jwtUser.getId())
@@ -129,14 +123,12 @@ public class FileUploadService {
         session.setStatus(UploadSessionStatus.UPLOADING);
         uploadSessionRepository.save(session);
 
+        log.info("Создана upload-сессия {} для пользователя {}, размер резервирования {} байт",
+                sessionUuid, owner.getId(), request.fileSize());
         return new FileResponses.BeginUpload(sessionUuid, chunkSize, (int) partCount);
     }
 
-    /**
-     * Проверяет владельца и номер части до передачи данных провайдеру.
-     * UUID сессии служит адресом ресурса, но не заменяет проверку владельца:
-     * все операции по-прежнему разрешены только JWT-пользователю-владельцу.
-     */
+    /** Проверяет владельца сессии и параметры части до вызова storage. */
     @Transactional
     public void uploadChunk(
             UUID sessionUuid,
@@ -211,8 +203,7 @@ public class FileUploadService {
                 session.getTotalParts()
         ).sizeBytes();
 
-        // Заявленный объём был полностью зарезервирован. Файл больше резерва
-        // не принимаем, иначе конкурентные загрузки смогли бы обойти quota check.
+        // Не допускаем превышения квоты, если фактический размер больше резерва.
         if (actualSize > session.getReservedBytes()) {
             throw new ApiException(ErrorCode.QUOTA_EXCEEDED);
         }
@@ -250,6 +241,8 @@ public class FileUploadService {
         uploadSessionRepository.save(session);
         redisRepository.delete(sessionUuid);
 
+        log.info("Upload-сессия {} завершена для пользователя {}, фактический размер {} байт",
+                sessionUuid, owner.getId(), actualSize);
         return FileResponses.Response.fromEntity(node);
     }
 
@@ -295,14 +288,8 @@ public class FileUploadService {
             return;
         }
 
-        /*
-         * Сначала условно захватываем сессию изменением состояния в БД.
-         * Обновление сериализуется с completeUpload: если завершение уже
-         * зафиксировало COMPLETED, abort ничего не удалит; если abort первым
-         * изменил состояние, completeUpload не сможет перейти в FINALIZING.
-         * При ошибке storage вся DB-транзакция откатится, и уборщик повторит
-         * попытку с активной сессией.
-         */
+        // Условный переход сериализует abort с completeUpload и предотвращает удаление
+        // уже завершённого объекта. Ошибка storage откатывает транзакцию для повтора.
         int transitioned = uploadSessionRepository.transitionFromActive(
                 session.getSessionUuid(),
                 ACTIVE_STATUSES,
@@ -325,16 +312,20 @@ public class FileUploadService {
             throw new IllegalStateException("Upload reservation was not available to release");
         }
         redisRepository.delete(session.getSessionUuid());
+
+        log.info("Upload-сессия {} отменена, владелец {}, освобождено {} байт резерва",
+                session.getSessionUuid(), session.getOwnerId(), session.getReservedBytes());
     }
 
-    /**
-     * Загружает сессию и проверяет её владельца до обращения к storage.
-     * Возвращаем одинаковую ошибку для чужого и неизвестного UUID, чтобы
-     * endpoint не раскрывал существование чужих загрузок.
-     */
+    /** Чужая сессия неотличима от отсутствующей, чтобы не раскрывать её существование. */
     private UploadSession getOwnedSessionOrThrow(UUID sessionUuid, JwtUserDetails jwtUser) {
         UploadSession session = uploadSessionRepository.findById(sessionUuid).orElse(null);
-        if (session == null || jwtUser == null || !session.getOwnerId().equals(jwtUser.getId())) {
+        if (session == null || jwtUser == null) {
+            throw new ApiException(ErrorCode.UPLOAD_SESSION_NOT_FOUND);
+        }
+        if (!session.getOwnerId().equals(jwtUser.getId())) {
+            log.warn("Пользователь {} попытался обратиться к upload-сессии другого владельца {}",
+                    jwtUser.getId(), sessionUuid);
             throw new ApiException(ErrorCode.UPLOAD_SESSION_NOT_FOUND);
         }
         return session;

@@ -21,15 +21,7 @@ public interface NodeRepository extends JpaRepository<Node, Long> {
     @Query("SELECT n.id FROM Node n WHERE n.uuid = :uuid")
     Long findIdByUuid(@Param("uuid") UUID uuid);
 
-    /**
-     * Проверяет доступ сразу для всего набора UUID и возвращает только узлы,
-     * у которых эффективный уровень прав не ниже переданного порога.
-     *
-     * Рекурсивная часть идёт от каждого запрошенного узла вверх по родителям,
-     * поэтому прямая и унаследованная выдача прав обрабатываются одинаково.
-     * Объединение с группами и проверка срока действия share также выполняются
-     * в этом же запросе, а не отдельным SQL-вызовом для каждого файла.
-     */
+    /** Возвращает узлы из набора UUID, на которые у пользователя есть требуемый уровень доступа. */
     @Query(value = """
         WITH RECURSIVE requested AS (
             SELECT n.uuid, n.id, n.parent_id, n.owner_id
@@ -84,7 +76,6 @@ public interface NodeRepository extends JpaRepository<Node, Long> {
 
     @Query(value = """
         WITH RECURSIVE node_hierarchy AS (
-            -- Начинаем с целевого узла
             SELECT
                 id,
                 parent_id,
@@ -95,7 +86,6 @@ public interface NodeRepository extends JpaRepository<Node, Long> {
 
             UNION ALL
 
-            -- Рекурсивно поднимаемся к родителям
             SELECT
                 n.id,
                 n.parent_id,
@@ -106,7 +96,6 @@ public interface NodeRepository extends JpaRepository<Node, Long> {
             WHERE n.deleted_at IS NULL
         ),
 
-        -- Преобразуем строковые права в числовые
         permission_levels AS (
             SELECT
                 'READ' AS perm_name, 1 AS perm_value
@@ -118,7 +107,6 @@ public interface NodeRepository extends JpaRepository<Node, Long> {
             SELECT 'OWNER', 4
         ),
 
-        -- Собираем все шары для узла и его родителей
         all_shares AS (
             SELECT
                 s.permissions,
@@ -132,7 +120,6 @@ public interface NodeRepository extends JpaRepository<Node, Long> {
               AND (s.recipient_id = :userId OR ug.user_id = :userId)
         ),
 
-        -- Проверяем, является ли пользователь владельцем узла или любого из родителей
         ownership_check AS (
             SELECT
                 CASE
@@ -143,7 +130,6 @@ public interface NodeRepository extends JpaRepository<Node, Long> {
                 END AS owner_level
         )
         
-        -- Возвращаем максимальный уровень доступа
         SELECT COALESCE(
             GREATEST(
                 (SELECT owner_level FROM ownership_check),
@@ -200,9 +186,7 @@ public interface NodeRepository extends JpaRepository<Node, Long> {
         SELECT CASE WHEN COUNT(n) > 0 THEN true ELSE false END
         FROM Node n
         WHERE n.uuid = :nodeUuid
-          AND (n.owner.id = :userId
-               /* OR EXISTS (SELECT 1 FROM NodeShare s WHERE s.node = n AND s.user.id = :userId) */
-              )
+          AND (n.owner.id = :userId)
     """)
     boolean hasAccess(UUID nodeUuid, Long userId);
 
@@ -231,10 +215,7 @@ public interface NodeRepository extends JpaRepository<Node, Long> {
 
     List<Node> findAllByUuidIn(List<UUID> uuids);
 
-    /**
-     * Берёт ограниченную страницу файлов, срок хранения которых в корзине истёк.
-     * Storage удаляется сервисом до удаления этой записи из базы.
-     */
+    /** Выбирает ограниченный batch файлов, срок хранения которых в корзине истёк. */
     @Query("""
         SELECT n FROM Node n
         WHERE n.nodeType = :nodeType
@@ -248,10 +229,7 @@ public interface NodeRepository extends JpaRepository<Node, Long> {
             Pageable pageable
     );
 
-    /**
-     * Удаляет только пустые папки из корзины. Непустые папки не каскадно
-     * удаляются: это сохраняет выбранную семантику «удаляется сама папка».
-     */
+    /** Выбирает только пустые папки с истёкшим сроком хранения. */
     @Query("""
         SELECT n FROM Node n
         WHERE n.nodeType = :nodeType

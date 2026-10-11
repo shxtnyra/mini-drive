@@ -61,6 +61,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDeniedException(AccessDeniedException ex, HttpServletRequest request) {
+        // Отказ в доступе важен для расследования ACL-проблем; детали исключения и параметры запроса не логируем.
+        log.warn("Отказано в доступе для запроса {} {}", request.getMethod(), request.getRequestURI());
         ErrorResponse response = ErrorResponse.of(
                 ErrorCode.ACCESS_DENIED.getHttpStatus(),
                 ErrorCode.ACCESS_DENIED.name(),
@@ -129,7 +131,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnhandledException(Exception ex, HttpServletRequest request) {
-        log.error("Unhandled exception occurred on path: {}", request.getRequestURI(), ex);
+        log.error("Произошло необрабатываемое исключение по пути: {}", request.getRequestURI(), ex);
 
         ErrorResponse body = ErrorResponse.of(
                 HttpStatus.INTERNAL_SERVER_ERROR,

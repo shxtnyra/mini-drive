@@ -2,6 +2,7 @@ package com.example.minidrive.provider;
 
 import com.example.minidrive.exception.StorageException;
 import com.example.minidrive.model.storage.StorageFile;
+import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 
 import java.io.IOException;
@@ -14,6 +15,7 @@ import java.util.UUID;
 import java.util.stream.Stream;
 
 @RequiredArgsConstructor
+@Slf4j
 public class LocalStorageProvider implements StorageProvider{
     private final Map<String, Object> config;
 
@@ -83,7 +85,8 @@ public class LocalStorageProvider implements StorageProvider{
         Path chunkPath = getBasePath().resolve(".tmp").resolve(uploadId).resolve("part-" + partNumber);
         try {
             Files.copy(inputStream, chunkPath, StandardCopyOption.REPLACE_EXISTING);
-            return "parts_" + partNumber; // Заглушка
+            // Локальный провайдер не вычисляет ETag; маркер нужен для учёта загруженной части.
+            return "parts_" + partNumber;
         } catch (IOException e) {
             throw new StorageException("Ошибка при записи чанка #" + partNumber + ": " + e.getMessage());
         }
@@ -134,7 +137,9 @@ public class LocalStorageProvider implements StorageProvider{
                         .forEach(path -> {
                             try {
                                 Files.delete(path);
-                            } catch (IOException ignored) {}
+                            } catch (IOException exception) {
+                                log.error("Не удалось удалить временный файл multipart-загрузки {}", path, exception);
+                            }
                         });
             } catch (IOException e) {
                 throw new StorageException("Ошибка при очистке временных файлов сессии: " + e.getMessage());

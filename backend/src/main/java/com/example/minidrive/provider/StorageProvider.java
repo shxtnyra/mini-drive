@@ -16,7 +16,7 @@ public interface StorageProvider {
 
     String initiateMultipartUpload(String key);
 
-    // Возращает hash
+    /** Загружает часть и возвращает её идентификатор для завершения multipart-загрузки. */
     String uploadChunk(String key, String uploadId, int partNumber, InputStream inputStream, long size);
 
     StorageFile completeMultipartUpload(String key, String uploadId, int totalParts);

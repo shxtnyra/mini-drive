@@ -3,6 +3,7 @@ package com.example.minidrive.service;
 import com.example.minidrive.enums.ErrorCode;
 import com.example.minidrive.exception.ApiException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -13,14 +14,12 @@ import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class RateLimiterService {
     /*
-     * Выполняет cooldown и фиксированное окно одним Lua-скриптом.
-     * Redis запускает скрипт атомарно, поэтому два параллельных запроса
-     * не могут одновременно пройти проверку cooldown и потерять инкремент.
-     *
-     * Результат: 0 означает разрешение, положительное число — остаток cooldown
-     * в миллисекундах, отрицательное — остаток лимитного окна после превышения.
+     * Проверка cooldown и счётчика выполняется атомарно в Redis.
+     * Результат: 0 — разрешено, положительное значение — cooldown,
+     * отрицательное — оставшееся время текущего лимитного окна (мс).
      */
     private static final DefaultRedisScript<Long> CHECK_AND_RECORD_SCRIPT =
             new DefaultRedisScript<>("""
@@ -85,6 +84,8 @@ public class RateLimiterService {
 
         if (result > 0) {
             long retryAfterSeconds = Math.max(1, (result + 999) / 1000);
+            log.warn("Отклонён запрос действия {} из-за cooldown; повторить через {} сек.",
+                    actionKey, retryAfterSeconds);
             throw new ApiException(
                     ErrorCode.TOO_MANY_REQUESTS,
                     Map.of("retryAfterSeconds", retryAfterSeconds)
@@ -93,6 +94,9 @@ public class RateLimiterService {
 
         if (result < 0) {
             long retryAfterSeconds = Math.max(1, (-result + 999) / 1000);
+            // Identifier может содержать персональные данные и не включается в лог.
+            log.warn("Отклонён запрос действия {} из-за превышения окна лимита; повторить через {} сек.",
+                    actionKey, retryAfterSeconds);
             throw new ApiException(
                     ErrorCode.RATE_LIMIT_EXCEEDED,
                     Map.of("retryAfterSeconds", retryAfterSeconds)

@@ -7,13 +7,9 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.UUID;
 
-/*
-Про права:
-    0 — нет доступа
-    1 — только чтение
-    2 — чтение и запись
-    3 — полный доступ (ALL)
-    4 — владелец
+/**
+ * Эффективные уровни доступа: 0 — нет доступа, 1 — чтение, 2 — запись,
+ * 3 — полный доступ по share, 4 — владелец.
  */
 
 @Component("fileSecurity")
@@ -21,10 +17,8 @@ import java.util.UUID;
 public class FileSecurityChecker {
     private final NodeRepository nodeRepository;
 
-    // Базовая проверка: может ли пользователь хотя бы УЗРЕТЬ этот узел?
     public boolean hasAccess(UUID nodeUuid, JwtUserDetails jwtUser) {
-        // Отсутствие parentUuid означает корень диска, а его содержимое
-        // дополнительно ограничивается владельцем в SQL выборки списка.
+        // Корень не является Node; его содержимое фильтруется отдельно по владельцу.
         if (nodeUuid == null) return jwtUser != null;
         if (jwtUser.isAdmin()) return true;
 
@@ -32,11 +26,9 @@ public class FileSecurityChecker {
         return level != null && level >= 1;
     }
 
-    // 2. Проверка на модификацию
     public boolean canModify(UUID nodeUuid, JwtUserDetails jwtUser) {
         if (jwtUser == null) return false;
-        // Корень не является Node. Для него используется отдельная проверка ниже из-за того что
-        // я не могу использовать isAuthenticated в связвке с or.
+        // Для корня используется отдельная проверка canCreateInRoot.
         if (nodeUuid == null) return false;
         if (jwtUser.isAdmin()) return true;
 
@@ -44,27 +36,22 @@ public class FileSecurityChecker {
         return level != null && level >= 2;
     }
 
-    // 3. Проверка на удаление
     public boolean canDelete(UUID nodeUuid, JwtUserDetails jwtUser) {
         if (jwtUser == null || nodeUuid == null) return false;
         if (jwtUser.isAdmin()) return true;
 
         Integer level = nodeRepository.getUserAccessLevel(nodeUuid, jwtUser.getId());
-        // WRITE может разрешать изменение содержимого, но удаление подвласно
-        // только владельцу или пользователю с полным правом ALL.
+        // Уровня WRITE недостаточно для удаления: нужны ALL или владение узлом.
         return level != null && level >= 3;
     }
 
     /**
-     * Создание узла в корне разрешено аутентифицированному пользователю:
+     * Корень диска не представлен в БД отдельным узлом, поэтому проверяется отдельно.
      */
     public boolean canCreateInRoot(UUID parentUuid, JwtUserDetails jwtUser) {
         return parentUuid == null && jwtUser != null;
     }
 
-    /**
-     * Проверяет пакет UUID одним запросом и требует права записи на каждом узле.
-     */
     public boolean canModifyAll(List<UUID> nodeUuids, JwtUserDetails jwtUser) {
         return hasRequiredLevel(nodeUuids, jwtUser, 2);
     }

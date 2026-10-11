@@ -148,8 +148,9 @@ public class AuthService {
         if (now.isAfter(refreshToken.getExpiresAt()))
             throw new ApiException(ErrorCode.REFRESH_TOKEN_EXPIRED);
 
-        // TODO: Чёт оно не работет
         if (refreshToken.getRevokedAt() != null) {
+            log.warn("Обнаружено повторное использование revoked refresh-токена пользователя {}",
+                    refreshToken.getUser().getId());
             refreshTokenRepository.revokeAllByUserId(refreshToken.getUser().getId(), now);
             throw new ApiException(ErrorCode.TOKEN_STOLEN);
         }
@@ -294,7 +295,7 @@ public class AuthService {
     public AuthResponses.Tokens verifyPasswordResetCode(
             AuthRequests.VerifyPasswordReset request) {
 
-        // Чтобы не показывать есть ли профиль
+        // Единый ответ не позволяет определить, зарегистрирован ли адрес электронной почты.
         User user = userRepository.findByEmail(request.email())
                 .orElseThrow(() -> new ApiException(ErrorCode.INVALID_CODE));
 
@@ -302,7 +303,7 @@ public class AuthService {
         validateAndConsumeCode(redisKey, request.code());
 
         Instant now = clock.instant();
-        // Выдаём короткий одноразовый JWT-токен только для шага установки нового пароля
+        // Токен разрешает только установку нового пароля и действует ограниченное время.
         String passwordChangeToken = jwtProvider.generatePasswordResetClaimToken(user, now);
 
         return new AuthResponses.Tokens(passwordChangeToken, null);
@@ -348,8 +349,7 @@ public class AuthService {
                 .stream().map(AuthResponses.Session::fromEntity).toList();
     }
 
-    // --- Private Methods ---
-    // Ключи формирую здесь, а не в репозитории выуждено из за универсального для всех метода validateAndConsumeCode
+    // Ключи формируются здесь, поскольку validateAndConsumeCode используется для разных сценариев.
     private String generateSixDigitCode() {
         int code = 100000 + secureRandom.nextInt(900000);
         return String.valueOf(code);

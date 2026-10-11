@@ -41,7 +41,6 @@ public class FileResponses {
             );
         }
 
-        // Полукостыль
         public static Response fromEntity(Node node) {
             return fromEntity(node, false);
         }

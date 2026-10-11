@@ -27,14 +27,6 @@ public class UserController {
     private final AuthService authService;
     private final ClientInfoExtractor clientInfoExtractor;
 
-//    @GetMapping
-//    public ResponseEntity<CursorResponse<UserResponses.Summary, UUID>> getUsers(
-//            @RequestParam(required = false) Long cursor,
-//            @RequestParam(defaultValue = "20") int size
-//    ) {
-//        return ResponseEntity.ok(userService.getAllUsers(cursor, size));
-//    }
-
     @GetMapping("/me")
     public ResponseEntity<UserResponses.Detail> getCurrentUser(@AuthenticationPrincipal JwtUserDetails jwtUser) {
         return ResponseEntity.ok(userService.getCurrentUser(jwtUser));

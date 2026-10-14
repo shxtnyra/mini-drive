@@ -97,18 +97,6 @@ public class UserService {
         quotaService.invalidateUserQuota(user.getId());
     }
 
-    @Transactional(readOnly = true)
-    public List<UserResponses.Summary> searchUsersByNameOrEmail(String query) {
-        List<User> users;
-
-        if(query.contains("@"))
-            users =  userRepository.searchUsersByEmail(query);
-        else
-            users = userRepository.searchUsersByUsername(query);
-
-        return users.stream().map(UserResponses.Summary::fromEntity).toList();
-    }
-
     private User findUserOrThrow(UUID userUuid) {
         return userRepository.findByUuid(userUuid)
                 .orElseThrow(() -> new ApiException(ErrorCode.USER_NOT_FOUND));

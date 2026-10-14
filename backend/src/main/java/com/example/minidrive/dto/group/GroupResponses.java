@@ -2,10 +2,11 @@ package com.example.minidrive.dto.group;
 
 import com.example.minidrive.entity.Group;
 import java.time.Instant;
+import java.util.UUID;
 
 public class GroupResponses {
     public record Response(
-            Long id,
+            UUID uuid,
             String name,
             int membersCount,
             long quotaBytes,
@@ -13,7 +14,7 @@ public class GroupResponses {
     ) {
         public static Response fromEntity(Group group) {
             return new Response(
-                    group.getId(),
+                    group.getUuid(),
                     group.getName(),
                     group.getMembersCount(),
                     group.getQuotaBytes(),

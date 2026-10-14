@@ -14,7 +14,6 @@ import java.util.zip.ZipOutputStream;
 import com.example.minidrive.enums.Context;
 import com.example.minidrive.provider.StorageProvider;
 import com.example.minidrive.provider.StorageProviderFactory;
-import com.example.minidrive.repository.FileVersionRepository;
 import com.example.minidrive.repository.NodeJdbcRepository;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -41,7 +40,6 @@ import lombok.extern.slf4j.Slf4j;
 public class FileService {
     private final NodeRepository nodeRepository;
     private final NodeJdbcRepository nodeJdbcRepository;
-    private final FileVersionRepository fileVersionRepository;
     private final UserRepository userRepository;
     private final StorageProviderFactory storageProviderFactory;
     private final Clock clock;
@@ -92,33 +90,6 @@ public class FileService {
         return new FileResponses.FolderResponse(breadcrumbs, cursorPage);
     }
 
-    @Transactional
-    public void purgeExpiredTrashFile(UUID nodeUuid, Instant deletedBefore) {
-        Node file = nodeRepository.findByUuid(nodeUuid).orElse(null);
-        if (file == null
-                || file.getNodeType() != NodeType.FILE
-                || file.getDeletedAt() == null
-                || file.getDeletedAt().isAfter(deletedBefore)) {
-            return;
-        }
-
-        storageProviderFactory.getProvider(file.getStorage()).delete(file.getStorageKey());
-        nodeRepository.delete(file);
-        if (userRepository.decrementUsedBytes(file.getOwner().getId(), file.getSizeBytes()) != 1) {
-            throw new IllegalStateException("Не удалось обновить квоту после окончательного удаления файла.");
-        }
-    }
-
-    @Transactional(readOnly = true)
-    @PreAuthorize("@fileSecurity.canReadAll(#request, #jwtUser)")
-    public void validateZipAccess(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
-        if (request == null || request.fileUuids() == null || request.fileUuids().isEmpty()) {
-            throw new ApiException(ErrorCode.FILE_NOT_FOUND);
-        }
-
-        // Проверка выполняется до запуска асинхронной передачи ZIP-архива.
-    }
-
     @Transactional()
     @PreAuthorize("@fileSecurity.canModify(#fileUuid, #jwtUser)")
     public FileResponses.Response updateFile(
@@ -137,7 +108,7 @@ public class FileService {
     }
 
     @Transactional
-    @PreAuthorize("@fileSecurity.canCreateInRoot(#request.parentUuid(), #jwtUser) or @fileSecurity.canModify(#request.parentUuid(), #jwtUser)")
+    @PreAuthorize("@fileSecurity.canModify(#request.parentUuid(), #jwtUser)")
     public FileResponses.Response createFolder(FileRequests.CreateFolder request, JwtUserDetails jwtUser) {
         Node parent = getParentFolder(request.parentUuid());
         User owner = userRepository.getReferenceById(jwtUser.getId());
@@ -158,16 +129,40 @@ public class FileService {
     }
 
     @Transactional
-    @PreAuthorize("@fileSecurity.canDeleteAll(#request, #jwtUser)")
+    @PreAuthorize("@fileSecurity.canDeleteAll(#request.fileUuids(), #jwtUser)")
     public void deleteFile(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
         Instant now = clock.instant();
         nodeRepository.markAsDeleted(request.fileUuids(), now);
     }
 
     @Transactional
-    @PreAuthorize("@fileSecurity.canDeleteAll(#request, #jwtUser)")
+    @PreAuthorize("@fileSecurity.canDeleteAll(#request.fileUuids(), #jwtUser)")
     public void restoreFile(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
         nodeRepository.unmarkAsDeleted(request.fileUuids());
+    }
+
+    @Transactional
+    @PreAuthorize("@fileSecurity.canModifyAll(#request.fileUuids(), #jwtUser)" +
+            " or @fileSecurity.canModify(#request.targetFolder(), #jwtUser)")
+    public void moveFiles(FileRequests.MoveFiles request, JwtUserDetails jwtUser) {
+        Long targetFolderId = request.targetFolder() == null
+                ? null
+                : nodeRepository.findFolderIdByUuid(request.targetFolder(), NodeType.FOLDER)
+                        .orElseThrow(() -> new ApiException(ErrorCode.FOLDER_NOT_FOUND));
+
+
+        List<UUID> fileUuids = request.fileUuids();
+
+        if (targetFolderId != null
+                && nodeRepository.targetIsInsideMovedSubtree(fileUuids, targetFolderId)) {
+            throw new ApiException(ErrorCode.INVALID_INPUT,
+                    Map.of("reason", "Целевая папка находится внутри перемещаемой структуры"));
+        }
+
+        int movedCount = nodeRepository.moveNodes(fileUuids, targetFolderId, jwtUser.getId(), clock.instant());
+        if (movedCount != fileUuids.size()) {
+            throw new ApiException(ErrorCode.FILE_NOT_FOUND);
+        }
     }
 
     @Transactional(readOnly = true)
@@ -185,6 +180,16 @@ public class FileService {
                 file.getMimeType() != null ? file.getMimeType() : "application/octet-stream",
                 file.getSizeBytes()
         );
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("@fileSecurity.canReadAll(#request.fileUuids(), #jwtUser)")
+    public void validateZipAccess(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
+        if (request == null || request.fileUuids() == null || request.fileUuids().isEmpty()) {
+            throw new ApiException(ErrorCode.FILE_NOT_FOUND);
+        }
+
+        // Проверка выполняется до запуска асинхронной передачи ZIP-архива.
     }
 
     @Transactional(readOnly = true)
@@ -210,6 +215,35 @@ public class FileService {
         }
     }
 
+    @Transactional
+    @PreAuthorize(value = "@fileSecurity.canReadAll(#request.fileUuids(), #jwtUser)")
+    public void addToFavorites(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
+        nodeRepository.addToFavorites(request.fileUuids(), jwtUser.getId());
+    }
+
+    @Transactional
+    @PreAuthorize(value = "@fileSecurity.canReadAll(#request.fileUuids(), #jwtUser)")
+    public void removeFromFavorites(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
+        nodeRepository.removeFromFavorites(request.fileUuids(), jwtUser.getId());
+    }
+
+    @Transactional
+    public void purgeExpiredTrashFile(UUID nodeUuid, Instant deletedBefore) {
+        Node file = nodeRepository.findByUuid(nodeUuid).orElse(null);
+        if (file == null
+                || file.getNodeType() != NodeType.FILE
+                || file.getDeletedAt() == null
+                || file.getDeletedAt().isAfter(deletedBefore)) {
+            return;
+        }
+
+        storageProviderFactory.getProvider(file.getStorage()).delete(file.getStorageKey());
+        nodeRepository.delete(file);
+        if (userRepository.decrementUsedBytes(file.getOwner().getId(), file.getSizeBytes()) != 1) {
+            throw new IllegalStateException("Не удалось обновить квоту после окончательного удаления файла.");
+        }
+    }
+
     private void streamZipFiles(FileRequests.BatchNodeRequest request, ZipOutputStream zipOut) {
         List<Node> allNodesInTree = nodeRepository.findAllSubtreeByRootUuids(request.fileUuids());
 
@@ -224,18 +258,6 @@ public class FileService {
         for (Node rootNode : rootNodes) {
             compressNodeRecursive(rootNode, "", zipOut, childrenMap);
         }
-    }
-
-    @Transactional
-    @PreAuthorize(value = "@fileSecurity.canReadAll(#request, #jwtUser)")
-    public void addToFavorites(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
-        nodeRepository.addToFavorites(request.fileUuids(), jwtUser.getId());
-    }
-
-    @Transactional
-    @PreAuthorize(value = "@fileSecurity.canReadAll(#request, #jwtUser)")
-    public void removeFromFavorites(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
-        nodeRepository.removeFromFavorites(request.fileUuids(), jwtUser.getId());
     }
 
     private void compressNodeRecursive(Node file, String parentPath, ZipOutputStream zipOut,  Map<Long, List<Node>> childrenMap) {
@@ -324,5 +346,4 @@ public class FileService {
                 ))
                 .toList();
     }
-
 }

@@ -5,10 +5,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.domain.Pageable;
 
-import javax.print.attribute.standard.MediaSize;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 public interface GroupRepository extends JpaRepository<Group, Long> {
     boolean existsByName(String name);
@@ -45,8 +46,6 @@ public interface GroupRepository extends JpaRepository<Group, Long> {
     """, nativeQuery = true)
     List<Group> getUserGroups(@Param("userId") Long userId);
 
-    List<Group> findByNameContainingIgnoreCase(String query);
-
     @Query(value = """
     SELECT ug.user_id
     FROM user_groups ug
@@ -61,4 +60,12 @@ public interface GroupRepository extends JpaRepository<Group, Long> {
     WHERE ug.user_id = :userId
     """, nativeQuery = true)
     Optional<Long> findMaxQuotaByUserId(@Param("userId") Long userId);
+
+    Optional<Group> findByUuid(UUID uuid);
+
+    List<Group> findAllByUuidIn(List<UUID> uuids);
+
+    List<Group> findByNameContainingIgnoreCaseOrderByNameAscUuidAsc(String query, Pageable pageable);
+
+    boolean existsByUuid(UUID groupUuid);
 }

@@ -6,7 +6,7 @@ import com.example.minidrive.dto.file.FileResponses;
 import com.example.minidrive.entity.Node;
 import com.example.minidrive.entity.Storage;
 import com.example.minidrive.entity.UploadSession;
-import com.example.minidrive.entity.UploadSessionStatus;
+import com.example.minidrive.enums.UploadSessionStatus;
 import com.example.minidrive.entity.User;
 import com.example.minidrive.enums.ErrorCode;
 import com.example.minidrive.enums.NodeType;
@@ -23,10 +23,12 @@ import com.example.minidrive.repository.redis.UploadSessionRepository;
 import com.example.minidrive.security.JwtUserDetails;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.time.Clock;
 import java.time.Instant;
@@ -54,51 +56,85 @@ public class FileUploadService {
     private final UploadSessionRepository redisRepository;
     private final Clock clock;
 
-    /** Создаёт сессию и резервирует квоту до начала передачи частей. */
     @Transactional
-    public FileResponses.BeginUpload initiateUpload(JwtUserDetails jwtUser, FileRequests.BeginUpload request) {
+    @PreAuthorize("@fileSecurity.canModify(#request.parentUuid(), #jwtUser)")
+    public FileResponses.Response uploadFile(FileRequests.DirectUpload request, MultipartFile file, JwtUserDetails jwtUser) {
         User owner = userRepository.findById(jwtUser.getId())
                 .orElseThrow(() -> new ApiException(ErrorCode.USER_NOT_FOUND));
 
-        Node parent = null;
-        if (request.parentUuid() != null) {
-            parent = nodeRepository.findByUuid(request.parentUuid())
-                    .orElseThrow(() -> new ApiException(ErrorCode.FOLDER_NOT_FOUND));
-            if (parent.getNodeType() != NodeType.FOLDER) {
-                throw new ApiException(ErrorCode.NOT_A_FOLDER);
-            }
-        }
-
+        Node parent = getParentFolderOrThrow(request.parentUuid());
         Long parentId = parent == null ? null : parent.getId();
-        if (nodeRepository.existsNodeName(owner.getId(), parentId, request.fileName(), NodeType.FILE)) {
-            throw new ApiException(ErrorCode.FILENAME_IN_FOLDER_EXISTS);
-        }
 
-        long chunkSize = getAndValidateChunkSize(request);
-        long partCount = ((request.fileSize() - 1) / chunkSize) + 1;
-        if (partCount > Integer.MAX_VALUE) {
-            throw new ApiException(ErrorCode.INVALID_INPUT, Map.of("field", "fileSize"));
-        }
-
-        long quota = quotaService.getUserQuota(owner.getId());
-        int reservationCreated = userRepository.reserveUploadQuota(
-                owner.getId(),
-                request.fileSize(),
-                quota,
-                properties.maxActiveUploads()
-        );
-        if (reservationCreated == 0) {
-            long activeCount = uploadSessionRepository.countByOwnerIdAndStatusIn(owner.getId(), ACTIVE_STATUSES);
-            if (activeCount >= properties.maxActiveUploads()) {
-                throw new ApiException(ErrorCode.TOO_MANY_ACTIVE_UPLOADS);
-            }
-            throw new ApiException(ErrorCode.QUOTA_EXCEEDED);
-        }
+        validateFileNameUniqueness(owner.getId(), parentId, request.fileName());
+        reserveQuotaOrThrow(owner.getId(), file.getSize());
 
         Storage storage = storageRepository.getDefaultStorage()
                 .orElseThrow(() -> new ApiException(ErrorCode.INTERNAL_SERVER_ERROR));
+        StorageProvider storageProvider = storageProviderFactory.getProvider(storage);
+        String storageKey = generateStorageKey(storage, owner);
+
+        try(InputStream inputStream = file.getInputStream()) {
+            storageProvider.uploadFile(storageKey, inputStream, file.getSize());
+        } catch (IOException | StorageException exception) {
+            log.error("Ошибка записи файла {}", exception);
+            throw new ApiException(ErrorCode.FILE_WRITE_ERROR);
+        }
+
+        Instant now = clock.instant();
+        Node node = Node.builder()
+                .owner(owner)
+                .name(request.fileName())
+                .sizeBytes(file.getSize())
+                .mimeType(request.mimeType())
+                .nodeType(NodeType.FILE)
+                .storageKey(storageKey)
+                .storage(storage)
+                .parent(parent)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+
+        try {
+            nodeRepository.save(node);
+            userRepository.consumeUploadReservation(
+                    owner.getId(),
+                    file.getSize(),
+                    file.getSize()
+            );
+        } catch (Exception e) {
+            storageProvider.delete(storageKey);
+            userRepository.consumeUploadReservation(
+                    owner.getId(),
+                    file.getSize(),
+                    0
+            );
+            throw new RuntimeException(e);
+        }
+
+        return FileResponses.Response.fromEntity(node);
+    }
+
+    @Transactional
+    @PreAuthorize("@fileSecurity.canModify(#request.parentUuid(), #jwtUser)")
+    public FileResponses.BeginUpload initiateUpload(FileRequests.BeginUpload request, JwtUserDetails jwtUser) {
+        User owner = userRepository.findById(jwtUser.getId())
+                .orElseThrow(() -> new ApiException(ErrorCode.USER_NOT_FOUND));
+
+        Node parent = getParentFolderOrThrow(request.parentUuid());
+        Long parentId = parent == null ? null : parent.getId();
+
+        validateFileNameUniqueness(owner.getId(), parentId, request.fileName());
+        reserveQuotaOrThrow(owner.getId(), request.fileSize());
+
+        long chunkSize = getAndValidateChunkSize(request);
+        long partCount = ((request.fileSize() - 1) / chunkSize) + 1;
+
+        Storage storage = storageRepository.getDefaultStorage()
+                .orElseThrow(() -> new ApiException(ErrorCode.INTERNAL_SERVER_ERROR));
+
         UUID sessionUuid = UUID.randomUUID();
         Instant now = clock.instant();
+
         UploadSession session = UploadSession.builder()
                 .sessionUuid(sessionUuid)
                 .ownerId(owner.getId())
@@ -119,6 +155,7 @@ public class FileUploadService {
 
         StorageProvider provider = storageProviderFactory.getProvider(storage);
         String uploadId = provider.initiateMultipartUpload(session.getStorageKey());
+
         session.setUploadId(uploadId);
         session.setStatus(UploadSessionStatus.UPLOADING);
         uploadSessionRepository.save(session);
@@ -128,7 +165,6 @@ public class FileUploadService {
         return new FileResponses.BeginUpload(sessionUuid, chunkSize, (int) partCount);
     }
 
-    /** Проверяет владельца сессии и параметры части до вызова storage. */
     @Transactional
     public void uploadChunk(
             UUID sessionUuid,
@@ -204,6 +240,7 @@ public class FileUploadService {
         ).sizeBytes();
 
         // Не допускаем превышения квоты, если фактический размер больше резерва.
+        // Небольшую недосдачу можем простить
         if (actualSize > session.getReservedBytes()) {
             throw new ApiException(ErrorCode.QUOTA_EXCEEDED);
         }
@@ -329,6 +366,39 @@ public class FileUploadService {
             throw new ApiException(ErrorCode.UPLOAD_SESSION_NOT_FOUND);
         }
         return session;
+    }
+
+    private Node getParentFolderOrThrow(UUID parentUuid) {
+        if (parentUuid == null) {
+            return null;
+        }
+        Node parent = nodeRepository.findByUuid(parentUuid)
+                .orElseThrow(() -> new ApiException(ErrorCode.FOLDER_NOT_FOUND));
+        if (parent.getNodeType() != NodeType.FOLDER) {
+            throw new ApiException(ErrorCode.NOT_A_FOLDER);
+        }
+        return parent;
+    }
+
+    private void validateFileNameUniqueness(Long ownerId, Long parentId, String fileName) {
+        if (nodeRepository.existsNodeName(ownerId, parentId, fileName, NodeType.FILE)) {
+            throw new ApiException(ErrorCode.FILENAME_IN_FOLDER_EXISTS);
+        }
+    }
+
+    private void reserveQuotaOrThrow(Long ownerId, long fileSize) {
+        long quota = quotaService.getUserQuota(ownerId);
+        int reservationCreated = userRepository.reserveUploadQuota(
+                ownerId, fileSize, quota, properties.maxActiveUploads()
+        );
+
+        if (reservationCreated == 0) {
+            int activeCount = userRepository.findActiveUploadCount(ownerId);
+            if (activeCount >= properties.maxActiveUploads()) {
+                throw new ApiException(ErrorCode.TOO_MANY_ACTIVE_UPLOADS);
+            }
+            throw new ApiException(ErrorCode.QUOTA_EXCEEDED);
+        }
     }
 
     private long getAndValidateChunkSize(FileRequests.BeginUpload request) {

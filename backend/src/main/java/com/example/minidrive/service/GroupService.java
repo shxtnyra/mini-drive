@@ -50,8 +50,8 @@ public class GroupService {
         return GroupResponses.Response.fromEntity(group);
     }
 
-    public PageResponse<UserResponses.Summary> getUsersFromGroup(Long groupId, Pageable pageable) {
-        Group group = findGroupOrThrow(groupId);
+    public PageResponse<UserResponses.Summary> getUsersFromGroup(UUID groupUuid, Pageable pageable) {
+        Group group = findGroupOrThrow(groupUuid);
 
         Page<UserResponses.Summary> users = userRepository.findByGroup(group.getId(), pageable)
                 .map(UserResponses.Summary::fromEntity);
@@ -61,8 +61,8 @@ public class GroupService {
 
     @Transactional
     @PreAuthorize("hasAnyRole('ADMIN')")
-    public void addUsersToGroup(Long groupId, List<UUID> usersUuid) {
-        Group group = findGroupOrThrow(groupId);
+    public void addUsersToGroup(UUID groupUuid, List<UUID> usersUuid) {
+        Group group = findGroupOrThrow(groupUuid);
 
         List<User> users = userRepository.findAllByUuidIn(usersUuid);
 
@@ -73,13 +73,13 @@ public class GroupService {
         List<Long> userIds = users.stream().map(User::getId).toList();
         groupRepository.addMembers(group.getId(), userIds);
         userIds.forEach(quotaService::invalidateUserQuota);
+        group.setMembersCount(group.getMembersCount() + userIds.size());
     }
 
     @Transactional
     @PreAuthorize("hasAnyRole('ADMIN')")
-    public void removeUsersFromGroup(Long groupId, List<UUID> usersUuid) {
-        if (!groupRepository.existsById(groupId))
-                throw new ApiException(ErrorCode.GROUP_NOT_FOUND);
+    public void removeUsersFromGroup(UUID groupUuid, List<UUID> usersUuid) {
+        Group group = findGroupOrThrow(groupUuid);
 
         List<User> users = userRepository.findAllByUuidIn(usersUuid);
 
@@ -88,46 +88,36 @@ public class GroupService {
         }
 
         List<Long> userIds = users.stream().map(User::getId).toList();
-        groupRepository.removeMembers(groupId, userIds);
+        groupRepository.removeMembers(group.getId(), userIds);
         userIds.forEach(quotaService::invalidateUserQuota);
+        group.setMembersCount(group.getMembersCount() - userIds.size());
     }
 
     @Transactional
-    public GroupResponses.Response setGroupQuota(Long groupId, GroupRequests.SetQuota request) {
-        Group group = findGroupOrThrow(groupId);
+    public GroupResponses.Response setGroupQuota(UUID groupUuid, GroupRequests.SetQuota request) {
+        Group group = findGroupOrThrow(groupUuid);
         group.setQuotaBytes(request.quotaBytes());
-
-        quotaService.invalidateGroupMembersQuota(groupId);
-
+        quotaService.invalidateGroupMembersQuota(group.getId());
         return GroupResponses.Response.fromEntity(group);
     }
 
     @Transactional
     @PreAuthorize("hasAnyRole('ADMIN')")
-    public GroupResponses.Response updateGroup(Long groupId, GroupRequests.Update request) {
-        Group group = findGroupOrThrow(groupId);
+    public GroupResponses.Response updateGroup(UUID groupUuid, GroupRequests.Update request) {
+        Group group = findGroupOrThrow(groupUuid);
         group.setName(request.name());
         return GroupResponses.Response.fromEntity(group);
     }
 
     @Transactional
     @PreAuthorize("hasAnyRole('ADMIN')")
-    public void deleteGroup(Long groupId) {
-        Group group = findGroupOrThrow(groupId);
+    public void deleteGroup(UUID groupUuid) {
+        Group group = findGroupOrThrow(groupUuid);
         groupRepository.delete(group);
     }
 
-    @Transactional(readOnly = true)
-    @PreAuthorize("isAuthenticated()")
-    public List<GroupResponses.Response> searchAllGroups(String query) {
-        return groupRepository.findByNameContainingIgnoreCase(query)
-                .stream()
-                .map(GroupResponses.Response::fromEntity)
-                .toList();
-    }
-
-    private Group findGroupOrThrow(Long groupId) {
-        return groupRepository.findById(groupId)
+    private Group findGroupOrThrow(UUID groupUuid) {
+        return groupRepository.findByUuid(groupUuid)
                 .orElseThrow(() -> new ApiException(ErrorCode.GROUP_NOT_FOUND));
     }
 }

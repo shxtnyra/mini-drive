@@ -62,14 +62,6 @@ public class UserController {
         return ResponseEntity.ok(authService.getUserSessions(jwtUser.getUuid()));
     }
 
-    @GetMapping("/search")
-    public ResponseEntity<List<UserResponses.Summary>> searchUser(
-            @RequestParam("query") String query,
-            @AuthenticationPrincipal JwtUserDetails jwtUser
-    ) {
-        return ResponseEntity.ok(userService.searchUsersByNameOrEmail(query));
-    }
-
     @PostMapping("me/email:verify")
     public ResponseEntity<AuthResponses.Tokens> verifyEmail(
             @Valid @RequestBody AuthRequests.VerifyEmail request,

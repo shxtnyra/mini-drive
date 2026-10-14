@@ -1,5 +1,6 @@
 package com.example.minidrive.entity;
 
+import com.example.minidrive.enums.UploadSessionStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

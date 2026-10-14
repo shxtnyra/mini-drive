@@ -58,7 +58,9 @@ public enum ErrorCode {
 
     // 500 Internal Error
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "Внутренняя ошибка сервера"),
-    CHUNK_WRITE_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "Ошибка зписи чанка");
+    CHUNK_WRITE_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "Ошибка записи чанка"),
+    FILE_WRITE_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "Ошибка записи файла");
+
 
     private final HttpStatus httpStatus;
     private final String defaultMessage;

@@ -25,6 +25,13 @@ public class FileRequests {
             Long requestedChunkSize
     ) {}
 
+    public record DirectUpload(
+            @NotBlank(message = "Имя файла не может быть пустым")
+            String fileName,
+            String mimeType,
+            UUID parentUuid
+    ) {}
+
     public record CreateFolder(
             @NotBlank String name,
             UUID parentUuid
@@ -34,6 +41,13 @@ public class FileRequests {
             @NotEmpty
             @Size(max = 100)
             List<@NotNull UUID> fileUuids
+    ) {}
+
+    public record MoveFiles(
+            @NotEmpty
+            @Size(max = 100)
+            List<@NotNull UUID> fileUuids,
+            UUID targetFolder
     ) {}
 
     public record UpdateFile(

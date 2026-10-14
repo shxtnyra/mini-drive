@@ -70,17 +70,13 @@ public class RateLimiterService {
         }
 
         String keyPrefix = "rate_limit:" + actionKey + ":" + identifier;
-        Long result = redisTemplate.execute(
+        long result = redisTemplate.execute(
                 CHECK_AND_RECORD_SCRIPT,
                 List.of(keyPrefix + ":cooldown", keyPrefix + ":window"),
                 Long.toString(Math.max(1, cooldown.toMillis())),
                 Long.toString(window.toMillis()),
                 Integer.toString(maxInWindow)
         );
-
-        if (result == null) {
-            throw new IllegalStateException("Redis не вернул результат");
-        }
 
         if (result > 0) {
             long retryAfterSeconds = Math.max(1, (result + 999) / 1000);
@@ -94,7 +90,6 @@ public class RateLimiterService {
 
         if (result < 0) {
             long retryAfterSeconds = Math.max(1, (-result + 999) / 1000);
-            // Identifier может содержать персональные данные и не включается в лог.
             log.warn("Отклонён запрос действия {} из-за превышения окна лимита; повторить через {} сек.",
                     actionKey, retryAfterSeconds);
             throw new ApiException(

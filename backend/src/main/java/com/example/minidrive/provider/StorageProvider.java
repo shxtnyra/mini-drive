@@ -6,7 +6,7 @@ import java.io.InputStream;
 
 public interface StorageProvider {
 
-    StorageFile uploadFile(InputStream inputStream, String key, long size);
+    StorageFile uploadFile(String key, InputStream inputStream, long size);
 
     InputStream getFileStream(String key);
 

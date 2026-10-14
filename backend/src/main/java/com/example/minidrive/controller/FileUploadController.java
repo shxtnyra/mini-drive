@@ -7,6 +7,7 @@ import com.example.minidrive.service.FileUploadService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -21,13 +22,22 @@ import java.util.UUID;
 public class FileUploadController {
     public final FileUploadService fileUploadService;
 
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<FileResponses.Response> uploadFile(
+            @Valid @RequestPart("metadata") FileRequests.DirectUpload request,
+            @RequestPart("file") MultipartFile multipartFile,
+            @AuthenticationPrincipal JwtUserDetails jwtUser
+    ) {
+        return ResponseEntity.ok(fileUploadService.uploadFile(request, multipartFile, jwtUser));
+    }
+
     @PostMapping("/initiate")
     @PreAuthorize("@fileSecurity.canCreateInRoot(#request.parentUuid(), #jwtUser) or @fileSecurity.canModify(#request.parentUuid(), #jwtUser)")
     public ResponseEntity<FileResponses.BeginUpload> initiateUpload(
             @AuthenticationPrincipal JwtUserDetails jwtUser,
             @Valid @RequestBody FileRequests.BeginUpload request
             ) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(fileUploadService.initiateUpload(jwtUser, request));
+        return ResponseEntity.status(HttpStatus.CREATED).body(fileUploadService.initiateUpload(request, jwtUser));
     }
 
     @PostMapping("/{sessionUuid}/chunks")

@@ -1,7 +1,7 @@
 package com.example.minidrive.service;
 
 import com.example.minidrive.entity.Node;
-import com.example.minidrive.entity.UploadSessionStatus;
+import com.example.minidrive.enums.UploadSessionStatus;
 import com.example.minidrive.enums.NodeType;
 import com.example.minidrive.repository.NodeRepository;
 import com.example.minidrive.repository.UploadSessionJpaRepository;

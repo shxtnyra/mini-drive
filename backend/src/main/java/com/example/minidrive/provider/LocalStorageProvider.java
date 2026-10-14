@@ -25,7 +25,7 @@ public class LocalStorageProvider implements StorageProvider{
     }
 
     @Override
-    public StorageFile uploadFile(InputStream inputStream, String key, long size) {
+    public StorageFile uploadFile(String key, InputStream inputStream, long size) {
         Path filePath = getBasePath().resolve(key);
 
         try {

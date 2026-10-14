@@ -80,6 +80,15 @@ public class FileController {
         return ResponseEntity.ok(new MessageResponse("Файл добавлен в избранное"));
     }
 
+    @PostMapping("/move")
+    public ResponseEntity<MessageResponse> moveFiles(
+            @Valid @RequestBody FileRequests.MoveFiles request,
+            @AuthenticationPrincipal JwtUserDetails jwtUser
+    ) {
+        fileService.moveFiles(request, jwtUser);
+        return ResponseEntity.ok(new MessageResponse("Элементы успешно перемещены"));
+    }
+
     @PostMapping("/remove-from-favorites")
     public ResponseEntity<MessageResponse> removeFromFavorites(
             @Valid @RequestBody FileRequests.BatchNodeRequest request,
@@ -87,15 +96,6 @@ public class FileController {
     ) {
         fileService.removeFromFavorites(request, jwtUser);
         return ResponseEntity.ok(new MessageResponse("Файл добавлен в избранное"));
-    }
-
-    @DeleteMapping()
-    public ResponseEntity<MessageResponse> deleteFile(
-            @Valid @RequestBody FileRequests.BatchNodeRequest request,
-            @AuthenticationPrincipal JwtUserDetails jwtUser
-    ) {
-        fileService.deleteFile(request, jwtUser);
-        return ResponseEntity.ok(new MessageResponse("Элемент успешно перемещен в корзину"));
     }
 
     @PostMapping("/restore")
@@ -159,6 +159,15 @@ public class FileController {
                 .contentLength(archiveSize)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"archive.zip\"")
                 .body(stream);
+    }
+
+    @DeleteMapping()
+    public ResponseEntity<MessageResponse> deleteFile(
+            @Valid @RequestBody FileRequests.BatchNodeRequest request,
+            @AuthenticationPrincipal JwtUserDetails jwtUser
+    ) {
+        fileService.deleteFile(request, jwtUser);
+        return ResponseEntity.ok(new MessageResponse("Элемент успешно перемещен в корзину"));
     }
 
     private void deleteTemporaryArchive(Path archive) {

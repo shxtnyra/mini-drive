@@ -6,10 +6,12 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.domain.Pageable;
+import jakarta.persistence.LockModeType;
 
 import com.example.minidrive.entity.Node;
 import com.example.minidrive.enums.NodeType;
@@ -18,10 +20,89 @@ public interface NodeRepository extends JpaRepository<Node, Long> {
     
     Optional<Node> findByUuid(UUID parentUuid);
 
+    boolean existsByUuidAndOwner_IdAndDeletedAtIsNull(UUID uuid, Long ownerId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT n FROM Node n
+        WHERE n.uuid = :uuid
+          AND n.owner.id = :ownerId
+          AND n.deletedAt IS NULL
+        """)
+    Optional<Node> findOwnedLiveNodeForUpdate(
+            @Param("uuid") UUID uuid,
+            @Param("ownerId") Long ownerId
+    );
+
+    Optional<Node> findByUuidAndDeletedAtIsNull(UUID uuid);
+
+    Optional<Node> findByUuidAndOwner_IdAndDeletedAtIsNull(UUID uuid, Long ownerId);
+
+    List<Node> findAllByParent_IdAndDeletedAtIsNullOrderByNameAsc(Long parentId);
+
+    @Query(value = """
+        WITH RECURSIVE ancestry(id, parent_id) AS (
+            SELECT n.id, n.parent_id
+            FROM nodes n
+            WHERE n.uuid = :nodeUuid
+              AND n.deleted_at IS NULL
+
+            UNION ALL
+
+            SELECT parent.id, parent.parent_id
+            FROM nodes parent
+            JOIN ancestry child ON child.parent_id = parent.id
+            WHERE parent.deleted_at IS NULL
+        )
+        SELECT EXISTS (
+            SELECT 1 FROM ancestry WHERE id = :rootId
+        )
+        """, nativeQuery = true)
+    boolean isLiveNodeInSubtree(@Param("rootId") Long rootId, @Param("fileUuid") UUID nodeUuid);
+
+    @Query("""
+        SELECT n.id
+        FROM Node n
+        WHERE n.uuid = :folderUuid
+          AND n.nodeType = :nodeType
+        """)
+    Optional<Long> findFolderIdByUuid(
+            @Param("folderUuid") UUID folderUuid,
+            @Param("nodeType") NodeType nodeType
+    );
+
     @Query("SELECT n.id FROM Node n WHERE n.uuid = :uuid")
     Long findIdByUuid(@Param("uuid") UUID uuid);
 
-    /** Возвращает узлы из набора UUID, на которые у пользователя есть требуемый уровень доступа. */
+    @Query("""
+    SELECT CASE WHEN COUNT(n) > 0 THEN true ELSE false END
+    FROM Node n
+    WHERE n.owner.id = :ownerId
+      AND n.deletedAt IS NULL
+      AND (:parentId IS NULL AND n.parent.id IS NULL OR n.parent.id = :parentId)
+      AND n.name = :fileName
+      AND n.nodeType = :nodeType
+    """)
+    boolean existsNodeName(Long ownerId, Long parentId, String fileName, NodeType nodeType);
+
+    @Query(value = """
+    WITH RECURSIVE subtree_ids AS (
+        SELECT id
+        FROM nodes
+        WHERE uuid IN (:uuids)
+
+        UNION ALL
+
+        SELECT n.id
+        FROM nodes AS n
+        INNER JOIN subtree_ids AS s ON n.parent_id = s.id
+    )
+    SELECT * FROM nodes
+    WHERE id IN (SELECT id FROM subtree_ids)
+    """, nativeQuery = true)
+    List<Node> findAllSubtreeByRootUuids(@Param("uuids") List<UUID> uuids);
+
+
     @Query(value = """
         WITH RECURSIVE requested AS (
             SELECT n.uuid, n.id, n.parent_id, n.owner_id
@@ -75,72 +156,6 @@ public interface NodeRepository extends JpaRepository<Node, Long> {
     );
 
     @Query(value = """
-        WITH RECURSIVE node_hierarchy AS (
-            SELECT
-                id,
-                parent_id,
-                owner_id,
-                1 AS level
-            FROM nodes
-            WHERE uuid = :nodeUuid AND deleted_at IS NULL
-
-            UNION ALL
-
-            SELECT
-                n.id,
-                n.parent_id,
-                n.owner_id,
-                nh.level + 1
-            FROM nodes n
-            INNER JOIN node_hierarchy nh ON n.id = nh.parent_id
-            WHERE n.deleted_at IS NULL
-        ),
-
-        permission_levels AS (
-            SELECT
-                'READ' AS perm_name, 1 AS perm_value
-            UNION ALL
-            SELECT 'WRITE', 2
-            UNION ALL
-            SELECT 'ALL', 3
-            UNION ALL
-            SELECT 'OWNER', 4
-        ),
-
-        all_shares AS (
-            SELECT
-                s.permissions,
-                pl.perm_value
-            FROM shares s
-            JOIN permission_levels pl ON s.permissions = pl.perm_name
-            LEFT JOIN user_groups ug ON s.group_id = ug.group_id
-            WHERE s.node_id IN (SELECT id FROM node_hierarchy)
-              AND s.deleted_at IS NULL
-              AND (s.expires_at IS NULL OR s.expires_at > NOW())
-              AND (s.recipient_id = :userId OR ug.user_id = :userId)
-        ),
-
-        ownership_check AS (
-            SELECT
-                CASE
-                    WHEN EXISTS (
-                        SELECT 1 FROM node_hierarchy WHERE owner_id = :userId
-                    ) THEN 4
-                    ELSE 0
-                END AS owner_level
-        )
-        
-        SELECT COALESCE(
-            GREATEST(
-                (SELECT owner_level FROM ownership_check),
-                (SELECT COALESCE(MAX(perm_value), 0) FROM all_shares)
-            ),
-            0
-        ) AS access_level
-        """, nativeQuery = true)
-    Integer getUserAccessLevel(@Param("nodeUuid") UUID nodeUuid, @Param("userId") Long userId);
-
-    @Query(value = """
     WITH RECURSIVE breadcrumb_path AS (
         SELECT n.id, n.uuid, n.name, n.parent_id, 1 as level
         FROM nodes n
@@ -163,17 +178,6 @@ public interface NodeRepository extends JpaRepository<Node, Long> {
     """, nativeQuery = true)
     List<Object[]> findBreadcrumbPath(@Param("folderUuid") UUID folderUuid, @Param("userId") Long userId);
 
-    @Query("""
-    SELECT CASE WHEN COUNT(n) > 0 THEN true ELSE false END
-    FROM Node n
-    WHERE n.owner.id = :ownerId
-      AND n.deletedAt IS NULL
-      AND (:parentId IS NULL AND n.parent.id IS NULL OR n.parent.id = :parentId)
-      AND n.name = :fileName
-      AND n.nodeType = :nodeType
-    """)
-    boolean existsNodeName(Long ownerId, Long parentId, String fileName, NodeType nodeType);
-
     @Modifying
     @Query("UPDATE Node n SET n.deletedAt = :now WHERE n.uuid IN :uuids")
     void markAsDeleted(@Param("uuids") List<UUID> uuids, Instant now);
@@ -181,68 +185,6 @@ public interface NodeRepository extends JpaRepository<Node, Long> {
     @Modifying
     @Query("UPDATE Node n SET n.deletedAt = NULL WHERE n.uuid IN :uuids")
     void unmarkAsDeleted(@Param("uuids") List<UUID> uuids);
-
-    @Query("""
-        SELECT CASE WHEN COUNT(n) > 0 THEN true ELSE false END
-        FROM Node n
-        WHERE n.uuid = :nodeUuid
-          AND (n.owner.id = :userId)
-    """)
-    boolean hasAccess(UUID nodeUuid, Long userId);
-
-    @Query("SELECT n FROM Node n WHERE n.uuid IN :uuids")
-    List<Node> findAllByUuid(@Param("uuids") List<UUID> uuids);
-
-    @Query("SELECT n FROM Node n WHERE n.parent.id = :id")
-    List<Node> findAllByParentId(@Param("id") Long id);
-
-    @Query(value = """
-    WITH RECURSIVE subtree_ids AS (
-        SELECT id
-        FROM nodes
-        WHERE uuid IN (:uuids)
-    
-        UNION ALL
-    
-        SELECT n.id
-        FROM nodes AS n
-        INNER JOIN subtree_ids AS s ON n.parent_id = s.id
-    )
-    SELECT * FROM nodes
-    WHERE id IN (SELECT id FROM subtree_ids)
-    """, nativeQuery = true)
-    List<Node> findAllSubtreeByRootUuids(@Param("uuids") List<UUID> uuids);
-
-    List<Node> findAllByUuidIn(List<UUID> uuids);
-
-    /** Выбирает ограниченный batch файлов, срок хранения которых в корзине истёк. */
-    @Query("""
-        SELECT n FROM Node n
-        WHERE n.nodeType = :nodeType
-          AND n.deletedAt IS NOT NULL
-          AND n.deletedAt <= :deletedBefore
-        ORDER BY n.deletedAt, n.id
-        """)
-    List<Node> findExpiredTrashNodes(
-            @Param("nodeType") NodeType nodeType,
-            @Param("deletedBefore") Instant deletedBefore,
-            Pageable pageable
-    );
-
-    /** Выбирает только пустые папки с истёкшим сроком хранения. */
-    @Query("""
-        SELECT n FROM Node n
-        WHERE n.nodeType = :nodeType
-          AND n.deletedAt IS NOT NULL
-          AND n.deletedAt <= :deletedBefore
-          AND NOT EXISTS (SELECT child.id FROM Node child WHERE child.parent = n)
-        ORDER BY n.deletedAt, n.id
-        """)
-    List<Node> findExpiredEmptyTrashFolders(
-            @Param("nodeType") NodeType nodeType,
-            @Param("deletedBefore") Instant deletedBefore,
-            Pageable pageable
-    );
 
     @Modifying
     @Query(value = """
@@ -261,4 +203,58 @@ public interface NodeRepository extends JpaRepository<Node, Long> {
       AND f.node_id IN (SELECT n.id FROM nodes n WHERE n.uuid IN (:uuids))
     """, nativeQuery = true)
     int removeFromFavorites(@Param("uuids") List<UUID> uuids, @Param("userId") Long userId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+    UPDATE nodes
+    SET parent_id = :targetFolderId,
+        updated_at = :updatedAt
+    WHERE uuid IN (:uuids)
+      AND owner_id = :ownerId
+      AND deleted_at IS NULL
+    """, nativeQuery = true)
+    int moveNodes(
+            @Param("uuids") List<UUID> uuids,
+            @Param("targetFolderId") Long targetFolderId,
+            @Param("ownerId") Long ownerId,
+            @Param("updatedAt") Instant updatedAt
+    );
+
+    @Query(value = """
+    WITH RECURSIVE moved_subtree(id) AS (
+        SELECT n.id
+        FROM nodes n
+        WHERE n.uuid IN (:uuids)
+          AND n.deleted_at IS NULL
+
+        UNION
+
+        SELECT child.id
+        FROM nodes child
+        JOIN moved_subtree parent ON child.parent_id = parent.id
+    )
+    SELECT EXISTS (
+        SELECT 1
+        FROM moved_subtree
+        WHERE id = :targetFolderId
+    )
+    """, nativeQuery = true)
+    boolean targetIsInsideMovedSubtree(
+            @Param("uuids") List<UUID> uuids,
+            @Param("targetFolderId") Long targetFolderId
+    );
+
+    @Query("""
+    SELECT n FROM Node n
+    WHERE n.nodeType = :nodeType
+      AND n.deletedAt IS NOT NULL
+      AND n.deletedAt <= :deletedBefore
+    ORDER BY n.deletedAt, n.id
+    """)
+    List<Node> findExpiredTrashNodes(
+            @Param("nodeType") NodeType nodeType,
+            @Param("deletedBefore") Instant deletedBefore,
+            Pageable pageable
+    );
+
 }

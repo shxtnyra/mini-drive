@@ -1,7 +1,7 @@
 package com.example.minidrive.repository;
 
 import com.example.minidrive.entity.UploadSession;
-import com.example.minidrive.entity.UploadSessionStatus;
+import com.example.minidrive.enums.UploadSessionStatus;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;

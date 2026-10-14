@@ -26,8 +26,8 @@ public class GroupController {
         return ResponseEntity.ok(groupService.getGroups(pageable));
     }
 
-    @GetMapping("/{id}")
-    public ResponseEntity<PageResponse<UserResponses.Summary>> getUsersFromGroup(@PathVariable Long id, @PageableDefault Pageable pageable) {
-        return ResponseEntity.ok(groupService.getUsersFromGroup(id, pageable));
+    @GetMapping("/{uuid}")
+    public ResponseEntity<PageResponse<UserResponses.Summary>> getUsersFromGroup(@PathVariable UUID uuid, @PageableDefault Pageable pageable) {
+        return ResponseEntity.ok(groupService.getUsersFromGroup(uuid, pageable));
     }
 }

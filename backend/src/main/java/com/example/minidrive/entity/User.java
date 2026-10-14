@@ -50,6 +50,10 @@ public class User {
     private Long reservedBytes = 0L;
 
     @Builder.Default
+    @Column(name = "active_uploads", nullable = false)
+    private Integer activeUploads = 0;
+
+    @Builder.Default
     @Column(name = "is_admin", nullable = false)
     private Boolean isAdmin = false;
 

@@ -20,6 +20,7 @@ CREATE TABLE users (
 -- ---------- Группы ----------
 CREATE TABLE groups (
     id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    uuid                UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
     name                VARCHAR(255) NOT NULL UNIQUE,
     members_count       INT NOT NULL,
     quota_bytes         BIGINT,

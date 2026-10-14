@@ -23,43 +23,43 @@ public class AdminGroupController {
         return ResponseEntity.ok(groupService.createGroup(request));
     }
 
-    @PutMapping("/{groupId}")
+    @PutMapping("/{uuid}")
     public ResponseEntity<GroupResponses.Response> updateGroup(
-            @PathVariable Long groupId,
+            @PathVariable UUID groupUuid,
             @RequestBody GroupRequests.Update request
     ) {
-        return ResponseEntity.ok(groupService.updateGroup(groupId, request));
+        return ResponseEntity.ok(groupService.updateGroup(groupUuid, request));
     }
 
-    @PostMapping("/{groupId}:set-quota")
+    @PostMapping("/{uuid}:set-quota")
     public ResponseEntity<GroupResponses.Response> setGroupQuota(
-            @PathVariable Long groupId,
+            @PathVariable UUID groupUuid,
             @RequestBody GroupRequests.SetQuota request
             ) {
-        return ResponseEntity.ok(groupService.setGroupQuota(groupId, request));
+        return ResponseEntity.ok(groupService.setGroupQuota(groupUuid, request));
     }
 
-    @PostMapping("/{groupId}:add-members")
+    @PostMapping("/{uuid}:add-members")
     public ResponseEntity<MessageResponse> addUsersToGroup(
-            @PathVariable Long groupId,
+            @PathVariable UUID groupUuid,
             @RequestBody List<UUID> usersUuid
     ) {
-        groupService.addUsersToGroup(groupId, usersUuid);
+        groupService.addUsersToGroup(groupUuid, usersUuid);
         return ResponseEntity.ok(new MessageResponse("Пользователи добавлены в группу"));
     }
 
-    @PostMapping("/{groupId}:remove-members")
+    @PostMapping("/{uuid}:remove-members")
     public ResponseEntity<MessageResponse> removeUsersFromGroup(
-            @PathVariable Long groupId,
+            @PathVariable UUID groupUuid,
             @RequestBody List<UUID> usersUuid
     ) {
-        groupService.removeUsersFromGroup(groupId, usersUuid);
+        groupService.removeUsersFromGroup(groupUuid, usersUuid);
         return ResponseEntity.ok(new MessageResponse("Пользователи удалены из группы"));
     }
 
-    @DeleteMapping("/{groupId}")
-    public ResponseEntity<MessageResponse> deleteGroup(@PathVariable Long groupId) {
-        groupService.deleteGroup(groupId);
+    @DeleteMapping("/{uuid}")
+    public ResponseEntity<MessageResponse> deleteGroup(@PathVariable UUID groupUuid) {
+        groupService.deleteGroup(groupUuid);
         return ResponseEntity.ok(new MessageResponse("Группа удалена"));
     }
 }

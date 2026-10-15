@@ -1,24 +1,39 @@
-import { Download, Edit3, UserPlus, Folder, Info, Trash2, Star, FolderOutput } from 'lucide-react';
+import { Download, Edit3, UserPlus, Folder, Info, Trash2, Star, FolderOutput, RotateCcw } from 'lucide-react';
 import { useFileStore } from '../store/useFileStore';
 import { useFileActions } from '../hooks/useFileActions';
+import type { FileListMode } from '../config/fileListConfig';
 import Menu from './ui/menu/Menu';
 import MenuGroup from './ui/menu/MenuGroup';
 import MenuItem from './ui/menu/MenuItem';
+import { useUIStore } from '../store/useUIStore';
+import { useAuthStore } from '../store/useAuthStore';
 
 interface ContextMenuProps {
   x: number;
   y: number;
   onClose: () => void;
+  mode: FileListMode;
 }
 
-export default function ContextMenu({ x, y, onClose }: ContextMenuProps) {
+export default function ContextMenu({ x, y, onClose, mode }: ContextMenuProps) {
   const files = useFileStore((state) => state.files);
   const selectedUuids = useFileStore((state) => state.selectedUuids);
-  const { deleteFiles, downloadSelected, openRenameModal, addToFavorites, removeFromFavorites } = useFileActions();
+  const currentUser = useAuthStore((state) => state.user);
+  const openMoveFilesModal = useUIStore((state) => state.openMoveFilesModal);
+  const openShareModal = useUIStore((state) => state.openShareModal);
+  const {
+    deleteFiles,
+    restoreFiles,
+    permanentlyDeleteFiles,
+    downloadSelected,
+    openRenameModal,
+    addToFavorites,
+    removeFromFavorites,
+  } = useFileActions();
 
   const isMultiple = selectedUuids.length > 1;
   const selectedFiles = files.filter((f) => selectedUuids.includes(f.uuid));
-  const allInFavorites = selectedFiles.length > 0 && selectedFiles.every((f) => (f as any).isFavorite);
+  const allInFavorites = selectedFiles.length > 0 && selectedFiles.every((f) => f.isFavorite);
 
   const handleRename = () => {
     if (selectedUuids.length !== 1) return;
@@ -35,6 +50,33 @@ export default function ContextMenu({ x, y, onClose }: ContextMenuProps) {
     }
     onClose();
   };
+
+  const handlePermanentDelete = () => {
+    if (window.confirm(`Удалить навсегда выбранные элементы (${selectedUuids.length})? Это действие нельзя отменить.`)) {
+      void permanentlyDeleteFiles(selectedUuids);
+    }
+    onClose();
+  };
+
+  if (mode === 'trash') {
+    return (
+      <Menu x={x} y={y} onClose={onClose}>
+        <MenuGroup showBorder={false}>
+          <MenuItem
+            icon={<RotateCcw size={18} />}
+            label="Восстановить"
+            onClick={() => { void restoreFiles(selectedUuids); onClose(); }}
+          />
+          <MenuItem
+            icon={<Trash2 size={18} />}
+            label="Удалить навсегда"
+            danger
+            onClick={handlePermanentDelete}
+          />
+        </MenuGroup>
+      </Menu>
+    );
+  }
 
   return (
     <Menu x={x} y={y} onClose={onClose}>
@@ -59,7 +101,8 @@ export default function ContextMenu({ x, y, onClose }: ContextMenuProps) {
         <MenuItem
           icon={<UserPlus size={18} />}
           label="Поделиться"
-          onClick={() => { console.log('Поделиться'); onClose(); }}
+          disabled={isMultiple || selectedFiles.length !== 1 || selectedFiles[0]?.ownerUuid !== currentUser?.uuid}
+          onClick={() => { openShareModal(selectedFiles[0]); onClose(); }}
         />
         <MenuItem
           icon={<Folder size={18} />}
@@ -69,7 +112,7 @@ export default function ContextMenu({ x, y, onClose }: ContextMenuProps) {
               <MenuItem
                 icon={<FolderOutput size={18} />}
                 label="Переместить"
-                onClick={() => { console.log('Переместить'); onClose(); }}
+                onClick={() => { openMoveFilesModal(selectedUuids); onClose(); }}
               />
               <MenuItem
                 icon={

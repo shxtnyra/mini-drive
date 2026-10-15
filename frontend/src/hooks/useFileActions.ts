@@ -83,6 +83,34 @@ export function useFileActions() {
     [removeFiles, clearSelection]
   );
 
+  const permanentlyDeleteFiles = useCallback(
+    async (uuids: string[]) => {
+      if (!uuids || uuids.length === 0) return;
+
+      try {
+        await fileService.permanentlyDeleteFiles(uuids);
+        removeFiles(uuids);
+        clearSelection();
+      } catch (error) {
+        console.error('Ошибка при окончательном удалении файлов:', error);
+      }
+    },
+    [removeFiles, clearSelection]
+  );
+
+  const moveFiles = useCallback(
+    async (uuids: string[], targetFolder: string | null) => {
+      if (uuids.length === 0) return;
+
+      await fileService.moveFiles(uuids, targetFolder);
+      if (targetFolder !== currentFolder) {
+        removeFiles(uuids);
+      }
+      clearSelection();
+    },
+    [currentFolder, removeFiles, clearSelection]
+  );
+
   const addToFavorites = async (uuids: string[]) => {
     try {
       await fileService.addToFavorites(uuids);
@@ -164,6 +192,8 @@ export function useFileActions() {
     createFolder,
     renameFile,
     restoreFiles,
+    permanentlyDeleteFiles,
+    moveFiles,
     downloadFile,
     downloadZip,
     downloadSelected,

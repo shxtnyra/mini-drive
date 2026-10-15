@@ -1,27 +1,57 @@
 import { 
-  Download, FolderOutput, Share2, Trash2, X, 
+  Download, FolderOutput, Share2, Trash2, X, RotateCcw,
   File, Image as ImageIcon, Video, FileArchive, 
   AudioLinesIcon
 } from "lucide-react";
 import { useFileStore } from "../store/useFileStore";
 import { useFileActions } from "../hooks/useFileActions";
+import { useUIStore } from "../store/useUIStore";
+import { useAuthStore } from "../store/useAuthStore";
 import FilterDropdown from "./ui/FilterDropdown";
+import type { FileFilters } from "../types/ui";
+import type { FileListMode } from "../config/fileListConfig";
 
-export default function Toolbar() {
+interface ToolbarAction {
+  id: string;
+  title: string;
+  icon: React.ReactNode;
+  disabled?: boolean;
+  hoverClass?: string;
+  onClick: () => void;
+}
+
+interface ToolbarProps {
+  mode?: FileListMode;
+}
+
+export default function Toolbar({ mode = 'drive' }: ToolbarProps) {
   const selectedUuids = useFileStore((state) => state.selectedUuids);
   const clearSelection = useFileStore((state) => state.clearSelection);
   const filters = useFileStore((state) => state.filters);
   const setFilters = useFileStore((state) => state.setFilters);
   const clearFilters = useFileStore((state) => state.clearFilters);
-  const { deleteFiles, downloadSelected } = useFileActions();
+  const currentUser = useAuthStore((state) => state.user);
+  const { deleteFiles, restoreFiles, permanentlyDeleteFiles, downloadSelected } = useFileActions();
+  const openMoveFilesModal = useUIStore((state) => state.openMoveFilesModal);
+  const openShareModal = useUIStore((state) => state.openShareModal);
+  const selectedFile = useFileStore((state) =>
+    state.files.find((file) => file.uuid === selectedUuids[0])
+  );
 
   const isSelected = selectedUuids.length > 0;
   const hasActiveFilters = filters.mimeTypeGroup !== 'all' || filters.dateRange !== 'any' || filters.nodeType !== undefined;
 
-  const actions = [ 
+  const actions: ToolbarAction[] = mode === 'trash' ? [
+    { id: "restore", title: "Восстановить", icon: <RotateCcw size={18} />, onClick: () => restoreFiles(selectedUuids) },
+    { id: "permanent-delete", title: "Удалить навсегда", icon: <Trash2 size={18} />, hoverClass: "hover:bg-error-bg hover:text-error-text", onClick: () => {
+      if (window.confirm(`Удалить навсегда выбранные элементы (${selectedUuids.length})? Это действие нельзя отменить.`)) {
+        void permanentlyDeleteFiles(selectedUuids);
+      }
+    } },
+  ] : [
     { id: "download", title: "Скачать", icon: <Download size={18} />, onClick: () => downloadSelected(selectedUuids) },
-    { id: "move", title: "Переместить", icon: <FolderOutput size={18} />, onClick: (uuids: string[]) => console.log("Переместить", uuids) },
-    { id: "share", title: "Поделиться", icon: <Share2 size={18} />, onClick: (uuids: string[]) => console.log("Поделиться", uuids) },
+    { id: "move", title: "Переместить", icon: <FolderOutput size={18} />, onClick: () => openMoveFilesModal(selectedUuids) },
+    { id: "share", title: "Поделиться", icon: <Share2 size={18} />, disabled: selectedUuids.length !== 1 || !selectedFile || selectedFile.ownerUuid !== currentUser?.uuid, onClick: () => selectedFile && openShareModal(selectedFile) },
     { id: "delete", title: "Удалить", icon: <Trash2 size={18} />, hoverClass: "hover:bg-error-bg hover:text-error-text", onClick: () => deleteFiles(selectedUuids) },
   ];
 
@@ -39,8 +69,9 @@ export default function Toolbar() {
             {actions.map((action) => (
               <button
                 key={action.id}
-                onClick={() => action.onClick(selectedUuids)}
-                className={`p-2 rounded-lg transition-colors cursor-pointer text-secondary ${action.hoverClass || "hover:bg-sidebar-hover hover:text-primary"}`}
+                onClick={action.onClick}
+                disabled={action.disabled}
+                className={`p-2 rounded-lg transition-colors cursor-pointer text-secondary disabled:opacity-40 disabled:cursor-not-allowed ${action.hoverClass || "hover:bg-sidebar-hover hover:text-primary"}`}
                 title={action.title}
               >
                 {action.icon}
@@ -48,13 +79,13 @@ export default function Toolbar() {
             ))}
           </div>
         </div>
-      ) : (
+      ) : mode !== 'trash' ? (
         <div className="flex items-center gap-2 animate-in fade-in duration-150 w-full">
           <FilterDropdown
             label="Тип"
             isActive={filters.mimeTypeGroup !== 'all'}
             selectedValue={filters.mimeTypeGroup || 'all'}
-            onSelect={(val) => setFilters({ mimeTypeGroup: val as any, nodeType: val === 'all' ? undefined : 'FILE' })}
+            onSelect={(val) => setFilters({ mimeTypeGroup: val as FileFilters['mimeTypeGroup'], nodeType: val === 'all' ? undefined : 'FILE' })}
             options={[
               { value: 'all', label: 'Все файлы' },
               { value: 'document', label: 'Документы', icon: <File size={14} /> },
@@ -69,7 +100,7 @@ export default function Toolbar() {
             label="Дата изменения"
             isActive={filters.dateRange !== 'any'}
             selectedValue={filters.dateRange || 'any'}
-            onSelect={(val) => setFilters({ dateRange: val as any })}
+            onSelect={(val) => setFilters({ dateRange: val as FileFilters['dateRange'] })}
             options={[
               { value: 'any', label: 'Любое время' },
               { value: 'today', label: 'Сегодня' },
@@ -89,7 +120,7 @@ export default function Toolbar() {
             </button>
           )}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

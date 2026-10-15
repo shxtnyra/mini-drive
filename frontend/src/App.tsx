@@ -10,6 +10,7 @@ import ProfilePage from './pages/ProfilePage';
 import FavoritePage from './pages/FavoritePage';
 import SharedPage from './pages/SharedPage';
 import ProtectedRoute from './components/layout/ProtectedRoute';
+import PublicSharePage from './pages/PublicSharePage';
 
 function App() {
   const { accessToken, user, loadUser } = useAuthStore();
@@ -26,6 +27,7 @@ function App() {
         {/* Публичные роуты */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/share/:token" element={<PublicSharePage />} />
 
         {/* Защищенные роуты */}
         <Route

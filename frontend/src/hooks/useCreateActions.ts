@@ -1,6 +1,7 @@
 import { useFileStore } from '../store/useFileStore';
 import { useUIStore } from '../store/useUIStore';
 import { useChunkedUpload } from './useChunkedUpload';
+import { uploadFolderStructure } from '../utils/folderUpload';
 
 export function useCreateActions() {
   const { uploadFile } = useChunkedUpload();
@@ -11,11 +12,12 @@ export function useCreateActions() {
     const input = document.createElement('input');
     input.type = 'file';
     input.multiple = true;
-    input.onchange = (e: any) => {
-      const files = e.target.files;
-      if (files) {
-        Array.from(files).forEach((file: any) => uploadFile(file, {parentUuid: currentFolder}));
-      }
+    input.onchange = () => {
+      const files = Array.from(input.files ?? []);
+      input.remove();
+      files.forEach((file) => {
+        void uploadFile(file, { parentUuid: currentFolder });
+      });
     };
     input.click();
   };
@@ -24,12 +26,14 @@ export function useCreateActions() {
     const input = document.createElement('input');
     input.type = 'file';
     input.multiple = true;
-    input.webkitdirectory = true;
-    input.onchange = (e: any) => {
-      const files = e.target.files;
-      if (files) {
-        Array.from(files).forEach((file: any) => uploadFile(file));
-      }
+    input.setAttribute('webkitdirectory', '');
+    input.onchange = () => {
+      const files = Array.from(input.files ?? []);
+      input.remove();
+      void uploadFolderStructure(files, currentFolder, uploadFile)
+        .catch((error: unknown) => {
+          console.error('Не удалось подготовить структуру загружаемой папки:', error);
+        });
     };
     input.click();
   };

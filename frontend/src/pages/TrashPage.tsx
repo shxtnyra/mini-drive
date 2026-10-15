@@ -10,7 +10,7 @@ export default function TrashPage() {
   return (
     <>
       <Breadcrumbs />
-      <Toolbar />
+      <Toolbar mode="trash" />
       <FileList 
         mode="trash" 
         columns={getColumnsByMode('trash')} 

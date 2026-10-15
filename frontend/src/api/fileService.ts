@@ -66,6 +66,16 @@ export const fileService = {
     });
   },
 
+  async permanentlyDeleteFiles(fileUuids: string[]): Promise<void> {
+    await api.delete('/files/permanent', {
+      data: { fileUuids },
+    });
+  },
+
+  async moveFiles(fileUuids: string[], targetFolder: string | null): Promise<void> {
+    await api.post('/files/move', { fileUuids, targetFolder });
+  },
+
   // Скачать одиночный файл
   async downloadFile(fileUuid: string): Promise<Blob> {
     const response = await api.get(`/files/${fileUuid}/download`, {

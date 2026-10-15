@@ -19,6 +19,8 @@ export interface TransferTask {
   file?: File;
   sessionUuid?: string;
   abortController?: AbortController;
+  parentUuid?: string | null;
+  chunkSize?: number;
   error?: string;
 }
 

@@ -8,7 +8,7 @@ export type TransferStatus = 'pending' | 'uploading' | 'completed' | 'error' | '
 interface TransferState {
   transfers: TransferTask[];
   
-  addUpload: (file: File) => string;
+  addUpload: (file: File, parentUuid?: string | null, chunkSize?: number) => string;
   updateUpload: (id: string, updates: Partial<TransferTask>) => void;
   removeUpload: (id: string) => void;
   cancelUpload: (id: string) => void;
@@ -19,7 +19,7 @@ interface TransferState {
 export const useTransferStore = create<TransferState>((set) => ({
   transfers: [],
 
-  addUpload: (file: File) => {
+  addUpload: (file: File, parentUuid = null, chunkSize) => {
     const id = crypto.randomUUID();
     const newTask: TransferTask = {
       id,
@@ -31,6 +31,8 @@ export const useTransferStore = create<TransferState>((set) => ({
       uploadedBytes: 0,
       totalBytes: file.size,
       startTime: Date.now(),
+      parentUuid,
+      chunkSize,
     };
 
     set((state) => ({

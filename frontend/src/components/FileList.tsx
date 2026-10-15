@@ -178,7 +178,12 @@ export default function FileList({ mode, columns, onLoadMore, onRefresh }: FileL
       )}
 
       {fileContextMenu && (
-        <ContextMenu x={fileContextMenu.x} y={fileContextMenu.y} onClose={() => setFileContextMenu(null)} />
+        <ContextMenu
+          x={fileContextMenu.x}
+          y={fileContextMenu.y}
+          mode={mode}
+          onClose={() => setFileContextMenu(null)}
+        />
       )}
       {createMenu && (
         <CreateMenu x={createMenu.x} y={createMenu.y} onClose={() => setCreateMenu(null)} />

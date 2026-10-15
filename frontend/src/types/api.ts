@@ -62,10 +62,70 @@ export interface BeginUploadRequest {
   requestedChunkSize?: number;
 }
 
-export interface BeginUploadResponse extends BeginUploadRequest {
+export interface DirectUploadRequest {
+  fileName: string;
+  mimeType?: string;
+  parentUuid?: string | null;
+}
+
+export interface BeginUploadResponse {
   sessionUuid: string;
   chunkSize: number;
   totalParts: number;
+}
+
+export interface UploadStatusResponse {
+  sessionUuid: string;
+  uploadedParts: number[];
+  totalParts: number;
+}
+
+export interface ShareUserTarget {
+  uuid: string;
+  displayName: string;
+  username: string;
+  email: string;
+}
+
+export interface ShareGroupTarget {
+  uuid: string;
+  name: string;
+  membersCount: number;
+}
+
+export interface ShareTargetsResponse {
+  users: ShareUserTarget[];
+  groups: ShareGroupTarget[];
+}
+
+export type SharePermission = 'READ' | 'WRITE' | 'ALL';
+export type ShareRecipientType = 'USER' | 'GROUP';
+
+export interface ShareRecipient {
+  shareUuid: string;
+  type: ShareRecipientType;
+  recipientUuid: string;
+  name: string;
+  email: string | null;
+  permission: SharePermission;
+}
+
+export interface PublicLink {
+  enabled: boolean;
+  token: string | null;
+  permission: SharePermission | null;
+}
+
+export interface ShareDetails {
+  nodeUuid: string;
+  recipients: ShareRecipient[];
+  link: PublicLink;
+}
+
+export interface PublicNodeResponse {
+  node: NodeResponse;
+  children: NodeResponse[];
+  permission: SharePermission;
 }
 
 export interface UserDetail {

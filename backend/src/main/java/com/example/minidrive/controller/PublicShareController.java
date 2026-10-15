@@ -29,12 +29,12 @@ public class PublicShareController {
         return ResponseEntity.ok(shareService.getPublicFile(token, null));
     }
 
-    @GetMapping("/{token}/{filesUuid}")
+    @GetMapping("/{token}/{fileUuid}")
     public ResponseEntity<ShareResponses.PublicNode> getSharedFile(
             @PathVariable String token,
-            @PathVariable UUID filesUuid
+            @PathVariable UUID fileUuid
     ) {
-        return ResponseEntity.ok(shareService.getPublicFile(token, filesUuid));
+        return ResponseEntity.ok(shareService.getPublicFile(token, fileUuid));
     }
 
     @GetMapping("/{token}/{fileUuid}/download")

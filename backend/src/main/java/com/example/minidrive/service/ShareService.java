@@ -161,7 +161,7 @@ public class ShareService {
         return new FileResponses.DownloadResult(
                 storageProviderFactory.getProvider(file.getStorage()).getFileStream(file.getStorageKey()),
                 file.getName(),
-                file.getMimeType() == null ? "application/octet-stream" : file.getMimeType(),
+                file.getMimeType() != null && !file.getMimeType().isEmpty() ? file.getMimeType() : "application/octet-stream",
                 file.getSizeBytes()
         );
     }

@@ -38,13 +38,15 @@ public interface NodeRepository extends JpaRepository<Node, Long> {
 
     Optional<Node> findByUuidAndOwner_IdAndDeletedAtIsNull(UUID uuid, Long ownerId);
 
+    List<Node> findAllByUuidInAndOwner_IdAndDeletedAtIsNotNull(List<UUID> uuids, Long ownerId);
+
     List<Node> findAllByParent_IdAndDeletedAtIsNullOrderByNameAsc(Long parentId);
 
     @Query(value = """
         WITH RECURSIVE ancestry(id, parent_id) AS (
             SELECT n.id, n.parent_id
             FROM nodes n
-            WHERE n.uuid = :nodeUuid
+            WHERE n.uuid = :fileUuid
               AND n.deleted_at IS NULL
 
             UNION ALL
@@ -58,7 +60,7 @@ public interface NodeRepository extends JpaRepository<Node, Long> {
             SELECT 1 FROM ancestry WHERE id = :rootId
         )
         """, nativeQuery = true)
-    boolean isLiveNodeInSubtree(@Param("rootId") Long rootId, @Param("fileUuid") UUID nodeUuid);
+    boolean isLiveNodeInSubtree(@Param("rootId") Long rootId, @Param("fileUuid") UUID fileUuid);
 
     @Query("""
         SELECT n.id

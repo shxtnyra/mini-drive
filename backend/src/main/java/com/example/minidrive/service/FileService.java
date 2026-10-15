@@ -14,6 +14,7 @@ import java.util.zip.ZipOutputStream;
 import com.example.minidrive.enums.Context;
 import com.example.minidrive.provider.StorageProvider;
 import com.example.minidrive.provider.StorageProviderFactory;
+import com.example.minidrive.repository.FileVersionRepository;
 import com.example.minidrive.repository.NodeJdbcRepository;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
@@ -22,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.example.minidrive.dto.common.CursorResponse;
 import com.example.minidrive.dto.file.FileRequests;
 import com.example.minidrive.dto.file.FileResponses;
+import com.example.minidrive.entity.FileVersion;
 import com.example.minidrive.entity.Node;
 import com.example.minidrive.entity.User;
 import com.example.minidrive.enums.ErrorCode;
@@ -39,6 +41,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class FileService {
     private final NodeRepository nodeRepository;
+    private final FileVersionRepository fileVersionRepository;
     private final NodeJdbcRepository nodeJdbcRepository;
     private final UserRepository userRepository;
     private final StorageProviderFactory storageProviderFactory;
@@ -142,8 +145,75 @@ public class FileService {
     }
 
     @Transactional
+    public void permanentlyDeleteFiles(FileRequests.BatchNodeRequest request, JwtUserDetails jwtUser) {
+        List<UUID> rootUuids = request.fileUuids();
+        if (rootUuids.stream().distinct().count() != rootUuids.size()) {
+            throw new ApiException(ErrorCode.INVALID_INPUT);
+        }
+
+        List<Node> trashRoots = nodeRepository.findAllByUuidInAndOwner_IdAndDeletedAtIsNotNull(
+                rootUuids,
+                jwtUser.getId()
+        );
+        if (trashRoots.size() != rootUuids.size()) {
+            throw new ApiException(ErrorCode.FILE_NOT_FOUND);
+        }
+
+        Map<Long, Node> subtreeById = nodeRepository.findAllSubtreeByRootUuids(rootUuids).stream()
+                .collect(Collectors.toMap(Node::getId, node -> node, (first, ignored) -> first));
+        List<Long> nodeIds = new ArrayList<>(subtreeById.keySet());
+        List<FileVersion> versions = fileVersionRepository.findAllByNode_IdIn(nodeIds);
+
+        for (FileVersion version : versions) {
+            storageProviderFactory.getProvider(version.getStorage()).delete(version.getStorageKey());
+        }
+        for (Node node : subtreeById.values()) {
+            if (node.getNodeType() == NodeType.FILE) {
+                storageProviderFactory.getProvider(node.getStorage()).delete(node.getStorageKey());
+            }
+        }
+
+        fileVersionRepository.deleteAllByNode_IdIn(nodeIds);
+
+        Map<Long, Long> bytesByOwner = new HashMap<>();
+        for (Node node : subtreeById.values()) {
+            if (node.getNodeType() == NodeType.FILE) {
+                bytesByOwner.merge(node.getOwner().getId(), node.getSizeBytes(), Long::sum);
+            }
+        }
+
+        Map<Long, Integer> depths = new HashMap<>();
+        subtreeById.values().stream()
+                .sorted(Comparator.comparingInt((Node node) -> getSubtreeDepth(node, subtreeById, depths)).reversed())
+                .forEach(node -> {
+                    nodeRepository.delete(node);
+                    nodeRepository.flush();
+                });
+
+        for (Map.Entry<Long, Long> entry : bytesByOwner.entrySet()) {
+            if (userRepository.decrementUsedBytes(entry.getKey(), entry.getValue()) != 1) {
+                throw new IllegalStateException("Не удалось обновить квоту после окончательного удаления файлов.");
+            }
+        }
+    }
+
+    private int getSubtreeDepth(Node node, Map<Long, Node> subtreeById, Map<Long, Integer> depths) {
+        Integer knownDepth = depths.get(node.getId());
+        if (knownDepth != null) {
+            return knownDepth;
+        }
+
+        Node parent = node.getParent();
+        int depth = parent != null && subtreeById.containsKey(parent.getId())
+                ? getSubtreeDepth(subtreeById.get(parent.getId()), subtreeById, depths) + 1
+                : 0;
+        depths.put(node.getId(), depth);
+        return depth;
+    }
+
+    @Transactional
     @PreAuthorize("@fileSecurity.canModifyAll(#request.fileUuids(), #jwtUser)" +
-            " or @fileSecurity.canModify(#request.targetFolder(), #jwtUser)")
+            " and @fileSecurity.canModify(#request.targetFolder(), #jwtUser)")
     public void moveFiles(FileRequests.MoveFiles request, JwtUserDetails jwtUser) {
         Long targetFolderId = request.targetFolder() == null
                 ? null
@@ -177,7 +247,7 @@ public class FileService {
         return new FileResponses.DownloadResult(
                 is,
                 file.getName(),
-                file.getMimeType() != null ? file.getMimeType() : "application/octet-stream",
+                file.getMimeType() != null && !file.getMimeType().isEmpty() ? file.getMimeType() : "application/octet-stream",
                 file.getSizeBytes()
         );
     }

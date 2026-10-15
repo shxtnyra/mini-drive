@@ -39,7 +39,6 @@ public class FileRequests {
 
     public record BatchNodeRequest(
             @NotEmpty
-            @Size(max = 100)
             List<@NotNull UUID> fileUuids
     ) {}
 

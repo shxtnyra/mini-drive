@@ -10,16 +10,14 @@ import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -107,13 +105,21 @@ public class FileController {
         return ResponseEntity.ok(new MessageResponse("Элемент успешно восстановлен"));
     }
 
+    @DeleteMapping("/permanent")
+    public ResponseEntity<MessageResponse> permanentlyDeleteFiles(
+            @Valid @RequestBody FileRequests.BatchNodeRequest request,
+            @AuthenticationPrincipal JwtUserDetails jwtUser
+    ) {
+        fileService.permanentlyDeleteFiles(request, jwtUser);
+        return ResponseEntity.ok(new MessageResponse("Элементы окончательно удалены"));
+    }
+
     @GetMapping("/{fileUuid}/download")
     public ResponseEntity<StreamingResponseBody> downloadFile(
             @PathVariable UUID fileUuid,
             @AuthenticationPrincipal JwtUserDetails jwtUser
     ) {
         FileResponses.DownloadResult result = fileService.downloadFile(fileUuid, jwtUser);
-
         StreamingResponseBody stream = outputStream -> {
             try (InputStream is = result.inputStream()) {
                 is.transferTo(outputStream);
@@ -123,8 +129,10 @@ public class FileController {
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(result.mimeType()))
                 .contentLength(result.sizeBytes())
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"" + result.fileName() + "\"")
+                .header(ContentDisposition.attachment()
+                        .filename(result.fileName(), StandardCharsets.UTF_8)
+                        .build()
+                        .toString())
                 .body(stream);
     }
 
